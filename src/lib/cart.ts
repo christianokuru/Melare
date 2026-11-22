@@ -73,7 +73,8 @@ async function mergeInto(targetId: string, sourceId: string) {
       if (existing) {
         await tx.update(s.cartItems).set({ quantity: Math.min(MAX_LINE_QTY, Math.max(existing.quantity, it.quantity)) }).where(eq(s.cartItems.id, existing.id));
       } else {
-        await tx.insert(s.cartItems).values({ cartId: targetId, variantId: it.variantId, bundleId: it.bundleId, quantity: it.quantity });
+        // Concurrent renders may merge at the same time: unique indexes + DO NOTHING keep this idempotent.
+        await tx.insert(s.cartItems).values({ cartId: targetId, variantId: it.variantId, bundleId: it.bundleId, quantity: it.quantity }).onConflictDoNothing();
       }
     }
     await tx.delete(s.carts).where(eq(s.carts.id, sourceId));

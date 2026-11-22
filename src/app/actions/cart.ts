@@ -34,7 +34,10 @@ export async function addToCart(input: z.input<typeof AddInput>): Promise<CartRe
   const wanted = (existing?.quantity ?? 0) + data.quantity;
 
   // Check availability against live stock using the same pricing path as checkout.
-  const probe = existing ? existing.id : (await db.insert(s.cartItems).values({ cartId, ...ref, quantity: 1 }).returning())[0].id;
+  // ON CONFLICT handles a concurrent add of the same item (double tap).
+  const probe = existing?.id
+    ?? (await db.insert(s.cartItems).values({ cartId, ...ref, quantity: 1 }).onConflictDoNothing().returning())[0]?.id
+    ?? (await db.select().from(s.cartItems).where(where))[0].id;
   const line = (await getCartLines(cartId)).find((l) => l.id === probe);
   if (!line || line.maxQty === 0) {
     if (!existing) await db.delete(s.cartItems).where(eq(s.cartItems.id, probe));
