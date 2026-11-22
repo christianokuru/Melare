@@ -1,11 +1,18 @@
 import Image from "next/image";
 import { formatMoney, type Currency } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { PAID_STATUSES, STATUS_LABEL } from "@/lib/order-status";
 
-export const STATUS_LABEL: Record<string, string> = {
-  pending: "Awaiting payment", paid: "Paid", processing: "Preparing", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled", refunded: "Refunded",
-};
-const STEPS = ["paid", "processing", "shipped", "delivered"];
+const STEPS: readonly string[] = PAID_STATUSES;
+const STEP_LABEL: Record<string, string> = { paid: "Confirmed", processing: "Preparing", shipped: "Shipped", delivered: "Delivered" };
+type When = Date | string | null | undefined;
+export type ProgressDates = Partial<Record<"paid" | "processing" | "shipped" | "delivered", When>>;
+
+/** Dates for the tracker: order timestamps + the "preparing" event from the timeline. */
+export const progressDates = (o: { paidAt: When; shippedAt: When; deliveredAt: When }, events: { status: string; createdAt: Date }[]): ProgressDates =>
+  ({ paid: o.paidAt, processing: events.find((e) => e.status === "processing")?.createdAt, shipped: o.shippedAt, delivered: o.deliveredAt });
+
+const fmtDay = (d: When) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Lagos" }) : "");
 
 export function StatusBadge({ status }: { status: string }) {
   const tone = status === "cancelled" || status === "refunded" ? "bg-muted text-muted-foreground" : status === "pending" ? "bg-[#f6ead2]" : status === "delivered" ? "bg-[#e3eedf]" : "bg-blush";
@@ -14,7 +21,7 @@ export function StatusBadge({ status }: { status: string }) {
 
 export type OrderViewData = {
   number: string; status: string; currency: Currency; subtotal: number; shippingFee: number; discount: number; total: number;
-  createdAt: string | Date; trackingNumber: string | null; shippingZone: string;
+  createdAt: string | Date; trackingNumber: string | null; shippingZone: string; progress?: ProgressDates;
   items: { name: string; label: string; quantity: number; unitPrice: number; image: string | null }[];
   address?: { fullName: string; phone: string; line1: string; line2?: string | null; city: string; state: string; country: string; postalCode?: string | null };
 };
@@ -26,19 +33,12 @@ export function OrderView({ o }: { o: OrderViewData }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="eyebrow text-muted-foreground">Order {o.number}</p>
-          <p className="text-sm text-muted-foreground">Placed {new Date(o.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</p>
+          <p className="text-sm text-muted-foreground">Placed {new Date(o.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}</p>
         </div>
         <StatusBadge status={o.status} />
       </div>
-      {step >= 0 && (
-        <ol className="grid grid-cols-4 gap-2 text-center text-[11px] uppercase tracking-[0.08em]" aria-label="Order progress">
-          {STEPS.map((st, i) => (
-            <li key={st} className={i <= step ? "" : "text-muted-foreground"}>
-              <span className={cn("mb-2 block h-1 rounded-full", i <= step ? "bg-foreground" : "bg-muted")} />{STATUS_LABEL[st]}
-            </li>
-          ))}
-        </ol>
-      )}
+      {step >= 0 && <OrderTracker status={o.status} progress={o.progress} />}
+      {o.status === "pending" && <p className="rounded-xl bg-[#f6ead2] p-4 text-sm">We’re waiting for your payment to be confirmed. This usually takes a few seconds.</p>}
       {o.trackingNumber && <p className="rounded-xl bg-blush p-4 text-sm">Tracking number: <strong className="select-all">{o.trackingNumber}</strong></p>}
       <ul className="divide-y border-y">
         {o.items.map((i, k) => (
@@ -68,5 +68,26 @@ export function OrderView({ o }: { o: OrderViewData }) {
         </dl>
       </div>
     </div>
+  );
+}
+
+/** Paid → Preparing → Shipped → Delivered, with the date each step happened. */
+export function OrderTracker({ status, progress }: { status: string; progress?: ProgressDates }) {
+  const step = STEPS.indexOf(status);
+  return (
+    <ol className="grid grid-cols-4" aria-label="Order progress">
+      {STEPS.map((st, i) => {
+        const done = i <= step;
+        const date = progress?.[st as keyof ProgressDates];
+        return (
+          <li key={st} className="relative flex flex-col items-center text-center" aria-current={i === step ? "step" : undefined}>
+            {i > 0 && <span className={cn("absolute top-3 right-1/2 h-0.5 w-full", done ? "bg-foreground" : "bg-muted")} aria-hidden />}
+            <span className={cn("relative flex size-6 items-center justify-center rounded-full border text-[11px]", done ? "border-foreground bg-foreground text-background" : "border-muted bg-background text-muted-foreground")} aria-hidden>{done ? "✓" : i + 1}</span>
+            <span className={cn("mt-2 text-[11px] uppercase tracking-[0.08em]", !done && "text-muted-foreground")}>{STEP_LABEL[st]}<span className="sr-only">{done ? " (done)" : ""}</span></span>
+            {done && date && <span className="text-[11px] text-muted-foreground">{fmtDay(date)}</span>}
+          </li>
+        );
+      })}
+    </ol>
   );
 }

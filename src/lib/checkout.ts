@@ -125,9 +125,15 @@ export async function expireStaleOrders() {
       if (!o || o.status !== "pending" || o.expiresAt > new Date()) return;
       await releaseOrderStock(tx, id);
       await tx.update(s.orders).set({ status: "cancelled", note: "Payment window expired" }).where(eq(s.orders.id, id));
+      await logOrderEvent(tx, id, "cancelled", "Payment window expired");
     });
   }
   return stale.length;
+}
+
+/** Appends to the order timeline (admin + customer history). */
+export async function logOrderEvent(ex: Executor, orderId: string, status: string, message: string | null = null) {
+  await ex.insert(s.orderEvents).values({ orderId, status, message });
 }
 
 export async function lockOrder(tx: Tx, orderId: string) {

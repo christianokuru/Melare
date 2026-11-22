@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { and, eq, gt, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
+import { PAID_STATUSES } from "@/lib/order-status";
 import { expireStaleOrders } from "@/lib/checkout";
 import { getCartLines } from "@/lib/cart";
 import { sendEmail, escapeHtml, APP_URL } from "@/lib/email";
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
   const due = await db.select({ itemId: s.orderItems.id, email: s.orders.email, name: s.orderItems.name, slug: s.products.slug })
     .from(s.orderItems).innerJoin(s.orders, eq(s.orders.id, s.orderItems.orderId)).innerJoin(s.products, eq(s.products.id, s.orderItems.productId))
     .where(and(
-      isNull(s.orderItems.reminderSentAt), inArray(s.orders.status, ["paid", "processing", "shipped", "delivered"]), isNotNull(s.products.daysSupply),
+      isNull(s.orderItems.reminderSentAt), inArray(s.orders.status, [...PAID_STATUSES]), isNotNull(s.products.daysSupply),
       sql`${s.orders.paidAt} + make_interval(days => ${s.products.daysSupply} - 10) <= now()`,
       sql`${s.orders.paidAt} > now() - interval '400 days'`,
     )).limit(200);

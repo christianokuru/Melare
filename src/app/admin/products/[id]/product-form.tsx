@@ -3,7 +3,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { toastResult } from "@/lib/toast-result";
-import { archiveProduct, saveProduct } from "@/app/actions/admin";
+import { archiveProduct, duplicateProduct, saveProduct } from "@/app/actions/admin";
+import { useConfirm } from "@/components/use-confirm";
 import { CONCERNS, SKIN_TYPES } from "@/lib/constants";
 import { slugify } from "@/lib/utils";
 import { adminButton, adminGhost, adminInput, adminLabel } from "@/components/admin/ui";
@@ -32,7 +33,15 @@ export function ProductForm({ categories, product }: { categories: { id: string;
       compareAtNgn: toMajor(v.compareAtNgn), compareAtUsd: toMajor(v.compareAtUsd), stock: String(v.stock),
     })));
   const [images, setImages] = useState<Img[]>(product?.images.map(({ src, alt }) => ({ src, alt })) ?? [{ src: "", alt: "" }]);
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  const moveImage = (from: number, to: number) => {
+    if (to < 0 || to >= images.length || from === to) return;
+    const next = [...images];
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    setImages(next);
+  };
 
   return (
     <form className="grid max-w-4xl gap-8" onSubmit={(e) => {
@@ -95,10 +104,18 @@ export function ProductForm({ categories, product }: { categories: { id: string;
 
       <section>
         <h2 className="mb-3 font-heading text-2xl">Images</h2>
-        <p className="mb-3 text-xs text-muted-foreground">JPG, PNG, WebP or AVIF up to 4 MB, at least 400px wide. Images are resized and converted to WebP automatically. The first image is the main photo.</p>
+        <p className="mb-3 text-xs text-muted-foreground">JPG, PNG, WebP or AVIF up to 4 MB, at least 400px wide. Images are resized and converted to WebP automatically. Drag to reorder (or use the arrows); the first image is the main photo.</p>
         <div className="grid gap-3">
           {images.map((im, i) => (
-            <div key={i} className="grid gap-3 rounded-xl border bg-white p-3 sm:grid-cols-[auto_1fr_auto] sm:items-end">
+            <div key={i} draggable onDragStart={() => setDragging(i)} onDragEnd={() => setDragging(null)}
+              onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (dragging != null) moveImage(dragging, i); setDragging(null); }}
+              className={`grid gap-3 rounded-xl border bg-white p-3 sm:grid-cols-[auto_auto_1fr_auto] sm:items-end ${dragging === i ? "opacity-50" : ""}`}>
+              <div className="flex items-center gap-1 sm:flex-col" aria-label={`Image ${i + 1} position`}>
+                <span className="cursor-grab px-1 text-muted-foreground select-none" aria-hidden title="Drag to reorder">⠿</span>
+                <button type="button" disabled={i === 0} onClick={() => moveImage(i, i - 1)} aria-label="Move image up" className="rounded px-1.5 text-sm disabled:opacity-30">↑</button>
+                <button type="button" disabled={i === images.length - 1} onClick={() => moveImage(i, i + 1)} aria-label="Move image down" className="rounded px-1.5 text-sm disabled:opacity-30">↓</button>
+                {i === 0 && <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:hidden">Main</span>}
+              </div>
               <ImageUpload folder="products" value={im.src} onChange={(src) => setImages(images.map((x, j) => (j === i ? { ...x, src } : x)))} />
               <div><label className={adminLabel} htmlFor={`i${i}-alt`}>Alt text (describe the photo)</label><input id={`i${i}-alt`} value={im.alt} onChange={(e) => setImages(images.map((x, j) => (j === i ? { ...x, alt: e.target.value } : x)))} required className={adminInput} /></div>
               <button type="button" disabled={images.length === 1} onClick={() => setImages(images.filter((_, j) => j !== i))} className="pb-2 text-xs text-destructive underline disabled:opacity-30">Remove</button>
@@ -116,10 +133,19 @@ export function ProductForm({ categories, product }: { categories: { id: string;
 
       <div className="flex flex-wrap gap-3">
         <button type="submit" disabled={pending} className={adminButton}>{pending ? "Saving…" : "Save product"}</button>
+        {product && (
+          <button type="button" disabled={pending} className={adminGhost} onClick={() => start(async () => {
+            const r = await duplicateProduct(product.id);
+            if (toastResult(r, "Copy created as a draft") && r.ok && r.id) router.push(`/admin/products/${r.id}`);
+          })}>Duplicate</button>
+        )}
         {product && product.status !== "archived" && (
-          <button type="button" disabled={pending} className={adminGhost} onClick={() => confirm("Archive this product? It will be hidden from the store.") && start(async () => { const r = await archiveProduct(product.id); toastResult(r, "Archived"); })}>Archive</button>
+          <button type="button" disabled={pending} className={adminGhost} onClick={async () => {
+            if (await confirm("Archive this product? It will be hidden from the store.", "Archive")) start(async () => { toastResult(await archiveProduct(product.id), "Archived"); });
+          }}>Archive</button>
         )}
       </div>
+      {confirmDialog}
     </form>
   );
 }

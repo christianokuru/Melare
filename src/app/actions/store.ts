@@ -111,7 +111,8 @@ export async function submitQuiz(input: z.input<typeof QuizInput>): Promise<Resu
     + (p.category === "cleansers" || p.category === "sun-care" ? 2 : 0) + (a.spf !== "daily" && p.category === "sun-care" ? 2 : 0);
   const size = a.routine === "minimal" ? 3 : a.routine === "balanced" ? 4 : 5;
   const picked = products.map((p) => ({ p, sc: score(p) })).filter((x) => x.sc > 0).sort((x, y) => y.sc - x.sc).slice(0, size).map((x) => x.p);
-  await db.insert(s.quizResults).values({ email: a.email || null, answers: a, productIds: picked.map((p) => p.id) });
+  const session = await getSession(); // signed-in shoppers keep this as their skin profile
+  await db.insert(s.quizResults).values({ userId: session?.user.id ?? null, email: a.email || null, answers: a, productIds: picked.map((p) => p.id) });
   if (a.email) {
     await db.insert(s.subscribers).values({ email: a.email, source: "quiz" }).onConflictDoNothing();
     await sendEmail(a.email, "Your Melaré routine", "Your routine, made for your skin",

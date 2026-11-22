@@ -1,6 +1,8 @@
 import "server-only";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError } from "better-auth/api";
+import { eq, sql } from "drizzle-orm";
 import { nextCookies } from "better-auth/next-js";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
@@ -44,6 +46,22 @@ export const auth = betterAuth({
       phone: { type: "string", required: false, input: false },
       referralCode: { type: "string", required: false, input: false },
     },
+    // Customers can delete their account (password required). Orders are kept for accounting, unlinked (user_id → null).
+    deleteUser: {
+      enabled: true,
+      beforeDelete: async (user) => {
+        if (isAdmin({ email: user.email, emailVerified: true })) throw new APIError("FORBIDDEN", { message: "The admin account can’t be deleted." });
+      },
+      afterDelete: async (user) => {
+        const email = user.email.toLowerCase();
+        await Promise.all([
+          db.delete(schema.subscribers).where(sql`lower(${schema.subscribers.email}) = ${email}`),
+          db.delete(schema.stockAlerts).where(sql`lower(${schema.stockAlerts.email}) = ${email}`),
+          db.delete(schema.quizResults).where(sql`lower(${schema.quizResults.email}) = ${email}`),
+          db.update(schema.carts).set({ email: null }).where(eq(schema.carts.email, user.email)),
+        ]);
+      },
+    },
   },
   session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: true, maxAge: 60 * 5 } },
   rateLimit: {
@@ -58,6 +76,7 @@ export const auth = betterAuth({
       "/reset-password": { window: 900, max: 5 },
       "/send-verification-email": { window: 900, max: 3 },
       "/change-password": { window: 900, max: 5 },
+      "/delete-user": { window: 900, max: 5 },
     },
   },
   advanced: { ipAddress: { ipAddressHeaders: ["x-real-ip", "x-forwarded-for"] } },

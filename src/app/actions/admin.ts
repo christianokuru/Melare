@@ -1,14 +1,17 @@
 "use server";
 import { z } from "zod";
 import { refresh, updateTag } from "next/cache";
-import { eq, inArray } from "drizzle-orm";
-import { db, schema as s } from "@/db";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { db, schema as s, type Tx } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { CATALOG_TAG } from "@/lib/catalog";
-import { releaseOrderStock } from "@/lib/checkout";
+import { logOrderEvent, releaseOrderStock } from "@/lib/checkout";
+import { STATUS_LABEL, TRANSITIONS } from "@/lib/order-status";
+import { isPushEndpoint, pushToAdmin, pushEnabled } from "@/lib/push";
+import { SETTINGS_TAG, type SettingKey } from "@/lib/settings";
 import { sendEmail, escapeHtml, APP_URL } from "@/lib/email";
 import { CONCERNS, SKIN_TYPES } from "@/lib/constants";
-import { slugify } from "@/lib/utils";
+import { randomCode, slugify } from "@/lib/utils";
 import { isMediaUrl, MEDIA_FOLDERS } from "@/lib/media";
 import { storeImage, UploadError } from "@/lib/storage";
 import { throttle } from "@/lib/throttle";
@@ -119,6 +122,41 @@ export async function archiveProduct(id: string): Promise<Result> {
   if (!uuid.safeParse(id).success) return { ok: false, error: "Invalid product." };
   await db.update(s.products).set({ status: "archived", featured: false }).where(eq(s.products.id, id));
   return done();
+}
+
+/** Inline stock edit from the products list. Restocking from 0 emails "back in stock" subscribers. */
+export async function setVariantStock(variantId: string, stock: number): Promise<Result> {
+  await requireAdmin();
+  const parsed = z.object({ variantId: uuid, stock: z.coerce.number().int().min(0).max(100000) }).safeParse({ variantId, stock });
+  if (!parsed.success) return { ok: false, error: "Enter a whole number from 0." };
+  const [before] = await db.select({ stock: s.productVariants.stock }).from(s.productVariants).where(eq(s.productVariants.id, parsed.data.variantId));
+  if (!before) return { ok: false, error: "Variant not found." };
+  await db.update(s.productVariants).set({ stock: parsed.data.stock }).where(eq(s.productVariants.id, parsed.data.variantId));
+  if (before.stock === 0 && parsed.data.stock > 0) await sendRestockAlerts([parsed.data.variantId]);
+  return done();
+}
+
+/** Copies a product (as a draft, stock 0, new slug/SKUs) so similar products are quick to add. */
+export async function duplicateProduct(id: string): Promise<Result> {
+  await requireAdmin();
+  if (!uuid.safeParse(id).success) return { ok: false, error: "Invalid product." };
+  const suffix = randomCode(4);
+  const newId = await db.transaction(async (tx) => {
+    const [p] = await tx.select().from(s.products).where(eq(s.products.id, id));
+    if (!p) return null;
+    const [variants, images] = await Promise.all([
+      tx.select().from(s.productVariants).where(eq(s.productVariants.productId, id)).orderBy(asc(s.productVariants.position)),
+      tx.select().from(s.productImages).where(eq(s.productImages.productId, id)).orderBy(asc(s.productImages.position)),
+    ]);
+    const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = p;
+    const [copy] = await tx.insert(s.products).values({
+      ...rest, name: `${p.name} (copy)`.slice(0, 100), slug: `${p.slug}-copy-${suffix.toLowerCase()}`.slice(0, 80), status: "draft", featured: false,
+    }).returning({ id: s.products.id });
+    if (variants.length) await tx.insert(s.productVariants).values(variants.map(({ id: _v, createdAt: _vc, updatedAt: _vu, ...v }) => ({ ...v, productId: copy.id, sku: `${v.sku}-${suffix}`.slice(0, 40), stock: 0 })));
+    if (images.length) await tx.insert(s.productImages).values(images.map(({ id: _i, createdAt: _ic, ...im }) => ({ ...im, productId: copy.id })));
+    return copy.id;
+  });
+  return newId ? done(newId) : { ok: false, error: "Product not found." };
 }
 
 /* ───────────── Categories ───────────── */
@@ -236,57 +274,74 @@ export async function moderateReview(id: string, action: "approve" | "hide" | "d
 }
 
 /* ───────────── Orders ───────────── */
-const TRANSITIONS: Record<string, string[]> = {
-  pending: ["cancelled"],
-  paid: ["processing", "shipped", "cancelled", "refunded"],
-  processing: ["shipped", "cancelled", "refunded"],
-  shipped: ["delivered", "refunded"],
-  delivered: ["refunded"],
-  cancelled: [],
-  refunded: [],
-};
-
 const OrderInput = z.object({
   id: uuid,
   status: z.enum(["pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded"]),
-  trackingNumber: z.string().trim().max(80).optional().default(""),
-  note: z.string().trim().max(500).optional().default(""),
+  trackingNumber: z.string().trim().max(80).optional(), // undefined = keep current
+  note: z.string().trim().max(500).optional(),
   restock: z.boolean().optional().default(true),
 });
+type Notify = { email: string; number: string; status: string; tracking: string | null };
+
+/** One order update under a row lock: enforces allowed transitions, stock, timeline. Returns whether status changed + the email to send. */
+async function applyOrderUpdate(tx: Tx, d: z.output<typeof OrderInput>): Promise<{ changed: boolean; notify: Notify | null }> {
+  const [o] = await tx.select().from(s.orders).where(eq(s.orders.id, d.id)).for("update");
+  if (!o) throw new AdminError("Order not found");
+  const changed = d.status !== o.status;
+  const tracking = d.trackingNumber === undefined ? o.trackingNumber : d.trackingNumber || null;
+  if (changed && !TRANSITIONS[o.status].includes(d.status)) throw new AdminError(`Can’t move an order from ${STATUS_LABEL[o.status]} to ${STATUS_LABEL[d.status]}`);
+  if (changed && d.status === "shipped" && !tracking) throw new AdminError("Add a tracking number before marking as shipped");
+  if (changed && (d.status === "cancelled" || (d.status === "refunded" && d.restock))) await releaseOrderStock(tx, o.id);
+  const now = new Date();
+  await tx.update(s.orders).set({
+    status: d.status, trackingNumber: tracking,
+    ...(d.note !== undefined ? { note: d.note || null } : {}),
+    ...(changed && d.status === "shipped" ? { shippedAt: now } : {}),
+    ...(changed && d.status === "delivered" ? { deliveredAt: now } : {}),
+  }).where(eq(s.orders.id, o.id));
+  if (!changed) return { changed, notify: null };
+  await logOrderEvent(tx, o.id, d.status, d.status === "shipped" ? `Tracking number ${tracking}` : null);
+  const notify = ["shipped", "delivered", "cancelled", "refunded"].includes(d.status) ? { email: o.email, number: o.number, status: d.status, tracking } : null;
+  return { changed, notify };
+}
 
 export async function updateOrder(input: z.input<typeof OrderInput>): Promise<Result> {
   await requireAdmin();
   const parsed = OrderInput.safeParse(input);
   if (!parsed.success) return fail(parsed.error);
-  const d = parsed.data;
-  let notify: { email: string; number: string; status: string; tracking: string | null } | null = null;
   try {
-    await db.transaction(async (tx) => {
-      const [o] = await tx.select().from(s.orders).where(eq(s.orders.id, d.id)).for("update");
-      if (!o) throw new AdminError("Order not found");
-      const changing = d.status !== o.status;
-      if (changing && !TRANSITIONS[o.status].includes(d.status)) throw new AdminError(`Can’t move an order from ${o.status} to ${d.status}`);
-      if (d.status === "shipped" && changing && !d.trackingNumber) throw new AdminError("Add a tracking number before marking as shipped");
-      if (changing && (d.status === "cancelled" || (d.status === "refunded" && d.restock))) await releaseOrderStock(tx, o.id);
-      const now = new Date();
-      await tx.update(s.orders).set({
-        status: d.status, trackingNumber: d.trackingNumber || null, note: d.note || null,
-        ...(changing && d.status === "shipped" ? { shippedAt: now } : {}),
-        ...(changing && d.status === "delivered" ? { deliveredAt: now } : {}),
-      }).where(eq(s.orders.id, o.id));
-      if (changing && ["shipped", "delivered", "cancelled", "refunded"].includes(d.status)) {
-        notify = { email: o.email, number: o.number, status: d.status, tracking: d.trackingNumber || null };
-      }
-    });
+    const { notify } = await db.transaction((tx) => applyOrderUpdate(tx, parsed.data));
+    if (notify) await sendStatusEmail(notify);
   } catch (e) {
     if (e instanceof AdminError) return { ok: false, error: e.message };
     throw e;
   }
-  if (notify) await sendStatusEmail(notify);
   return done();
 }
 
-async function sendStatusEmail(n: { email: string; number: string; status: string; tracking: string | null }) {
+/** Bulk move (no tracking needed): paid → preparing, shipped → delivered. Orders that can't move are skipped. */
+export async function bulkUpdateOrders(ids: string[], status: string): Promise<{ ok: true; updated: number; skipped: number } | { ok: false; error: string }> {
+  await requireAdmin();
+  const parsed = z.object({ ids: z.array(uuid).min(1).max(100), status: z.enum(["processing", "delivered"]) }).safeParse({ ids, status });
+  if (!parsed.success) return { ok: false, error: "Select at least one order." };
+  const unique = [...new Set(parsed.data.ids)];
+  const emails: Notify[] = [];
+  let updated = 0;
+  for (const id of unique) {
+    try {
+      const r = await db.transaction((tx) => applyOrderUpdate(tx, { id, status: parsed.data.status, restock: true }));
+      if (r.changed) updated++;
+      if (r.notify) emails.push(r.notify);
+    } catch (e) {
+      if (!(e instanceof AdminError)) throw e;
+    }
+  }
+  await Promise.allSettled(emails.map(sendStatusEmail));
+  refresh();
+  return { ok: true, updated, skipped: unique.length - updated };
+}
+
+async function sendStatusEmail(n: Notify) {
   const copy: Record<string, string> = {
     shipped: `Your order is on its way.${n.tracking ? ` Tracking number: <strong>${escapeHtml(n.tracking)}</strong>.` : ""}`,
     delivered: "Your order has been delivered. We hope you love it. We’d be grateful for a review once you’ve tried it.",
@@ -324,6 +379,58 @@ export async function deleteZone(id: string): Promise<Result> {
   if (target?.country === "*" && zones.filter((z0) => z0.country === "*").length === 1) return { ok: false, error: "Keep at least one rest-of-world (*) zone." };
   await db.delete(s.shippingZones).where(eq(s.shippingZones.id, id));
   return done();
+}
+
+/* ───────────── Store settings ───────────── */
+const SettingsInput = z.object({
+  whatsapp: z.union([z.string().trim().regex(/^\+?[0-9]{7,15}$/, "WhatsApp: digits only, with country code (e.g. 2348012345678)"), z.literal("")]),
+  announcement: z.string().trim().max(120),
+  announcementMobile: z.string().trim().max(60),
+}) satisfies z.ZodType<Record<SettingKey, string>>;
+
+export async function saveSettings(input: z.input<typeof SettingsInput>): Promise<Result> {
+  await requireAdmin();
+  const parsed = SettingsInput.safeParse(input);
+  if (!parsed.success) return fail(parsed.error);
+  await db.transaction(async (tx) => {
+    for (const [key, value] of Object.entries(parsed.data)) {
+      await tx.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } });
+    }
+  });
+  updateTag(SETTINGS_TAG);
+  refresh();
+  return { ok: true };
+}
+
+/* ───────────── New-order push notifications ───────────── */
+const PushInput = z.object({
+  endpoint: z.string().max(1000).refine(isPushEndpoint, "Unsupported push service"),
+  keys: z.object({ p256dh: z.string().regex(/^[A-Za-z0-9_-]{80,100}$/), auth: z.string().regex(/^[A-Za-z0-9_-]{16,32}$/) }),
+});
+
+export async function savePushSubscription(input: z.input<typeof PushInput>): Promise<Result> {
+  const session = await requireAdmin();
+  if (!pushEnabled()) return { ok: false, error: "Push notifications aren’t configured on the server." };
+  const parsed = PushInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "This browser’s push subscription isn’t supported." };
+  if (!(await throttle("push-sub", 20, 3600, session.user.id))) return { ok: false, error: "Too many attempts. Try again later." };
+  const { endpoint, keys } = parsed.data;
+  await db.insert(s.pushSubscriptions).values({ endpoint, userId: session.user.id, ...keys })
+    .onConflictDoUpdate({ target: s.pushSubscriptions.endpoint, set: { userId: session.user.id, ...keys } });
+  return { ok: true };
+}
+
+export async function removePushSubscription(endpoint: string): Promise<Result> {
+  const session = await requireAdmin();
+  await db.delete(s.pushSubscriptions).where(and(eq(s.pushSubscriptions.endpoint, String(endpoint).slice(0, 1000)), eq(s.pushSubscriptions.userId, session.user.id)));
+  return { ok: true };
+}
+
+export async function sendTestPush(): Promise<Result> {
+  const session = await requireAdmin();
+  if (!(await throttle("push-test", 10, 3600, session.user.id))) return { ok: false, error: "Too many test notifications. Try again later." };
+  await pushToAdmin({ title: "Melaré notifications are on", body: "You’ll get an alert here for every new paid order.", url: "/admin" });
+  return { ok: true };
 }
 
 class AdminError extends Error {}

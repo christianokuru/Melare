@@ -1,7 +1,7 @@
 "use server";
 import { z } from "zod";
 import { refresh } from "next/cache";
-import { and, count, eq, ne } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { getSession } from "@/lib/auth";
 import { throttle } from "@/lib/throttle";
@@ -11,6 +11,18 @@ import type { Currency } from "@/lib/money";
 type Result = { ok: true } | { ok: false; error: string };
 const UNAUTH = { ok: false as const, error: "Please sign in again." };
 const phone = z.string().trim().regex(/^\+?[0-9][0-9\s-]{6,19}$/, "Enter a valid phone number");
+
+/** Newsletter / offers opt-in for the signed-in customer (order emails are always sent). */
+export async function setMarketingEmails(subscribed: boolean): Promise<Result> {
+  const session = await getSession();
+  if (!session) return UNAUTH;
+  if (!(await throttle("marketing", 20, 3600, session.user.id))) return { ok: false, error: "Too many changes. Try again later." };
+  const email = session.user.email.toLowerCase();
+  if (subscribed) await db.insert(s.subscribers).values({ email, source: "account" }).onConflictDoNothing();
+  else await db.delete(s.subscribers).where(sql`lower(${s.subscribers.email}) = ${email}`);
+  refresh();
+  return { ok: true };
+}
 
 export async function updateProfile(input: { name: string; phone: string }): Promise<Result> {
   const session = await getSession();

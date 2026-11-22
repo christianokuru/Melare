@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { getProduct, getProducts, getRelated, getReviews, getShippingZones } from "@/lib/catalog";
 import { getCurrency } from "@/lib/request";
+import { getSettings } from "@/lib/settings";
 import { getSession } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
 import { CONCERNS, SITE, whatsappLink } from "@/lib/constants";
@@ -43,7 +44,7 @@ export default function ProductPage({ params }: PageProps<"/products/[slug]">) {
 async function Product({ params }: { params: PageProps<"/products/[slug]">["params"] }) {
   const p = await getProduct((await params).slug);
   if (!p) notFound();
-  const [currency, reviews] = await Promise.all([getCurrency(), getReviews(p.id)]);
+  const [currency, reviews, { whatsapp }] = await Promise.all([getCurrency(), getReviews(p.id), getSettings()]);
   const path = `/products/${p.slug}`;
   const concerns = CONCERNS.filter((c) => p.concerns.includes(c.slug));
   const variants = p.variants.map((v) => ({
@@ -106,7 +107,7 @@ async function Product({ params }: { params: PageProps<"/products/[slug]">["para
             ))}
           </Accordion>
 
-          <a href={whatsappLink(`Hi Melaré, I have a question about ${p.name}.`)} target="_blank" rel="noopener noreferrer"
+          <a href={whatsappLink(whatsapp, `Hi Melaré, I have a question about ${p.name}.`)} target="_blank" rel="noopener noreferrer"
             className="mt-6 flex items-center gap-3 rounded-2xl bg-blush p-4 text-sm"><ChatIcon /> <span>Not sure it’s right for you? <u>Ask us on WhatsApp</u></span></a>
         </div>
       </div>

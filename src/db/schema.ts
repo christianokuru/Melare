@@ -221,6 +221,7 @@ export const stockAlerts = pgTable("stock_alerts", {
 
 export const quizResults = pgTable("quiz_results", {
   id: id(),
+  userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
   email: text("email"),
   answers: jsonb("answers").notNull(),
   productIds: text("product_ids").array().notNull(),
@@ -325,6 +326,32 @@ export const payments = pgTable("payments", {
   raw: jsonb("raw"),
   createdAt, updatedAt,
 }, (t) => [index("payments_order_idx").on(t.orderId)]);
+
+/** Order timeline shown to the admin and the customer. */
+export const orderEvents = pgTable("order_events", {
+  id: id(),
+  orderId: text("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+  message: text("message"),
+  createdAt,
+}, (t) => [index("order_events_order_idx").on(t.orderId)]);
+
+/* ───────────── Admin ───────────── */
+// Web Push subscriptions (only the admin can subscribe: new-order alerts).
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  endpoint: text("endpoint").primaryKey(),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt,
+});
+
+// Store settings editable from the admin (key/value).
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt,
+});
 
 export type ShippingAddress = {
   fullName: string; phone: string; line1: string; line2?: string | null;

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { useConfirm } from "@/components/use-confirm";
 import { toast } from "sonner";
 import { toastResult } from "@/lib/toast-result";
 import { deleteCategory, saveCategory } from "@/app/actions/admin";
@@ -10,6 +11,7 @@ type Cat = { id?: string; slug: string; name: string; description: string | null
 
 export function CategoryEditor({ categories }: { categories: Cat[] }) {
   const [pending, start] = useTransition();
+  const [confirm, confirmDialog] = useConfirm();
   const rows: Cat[] = [...categories, { slug: "", name: "", description: "", image: "", position: categories.length + 1 }];
   return (
     <div className="grid gap-4">
@@ -29,10 +31,11 @@ export function CategoryEditor({ categories }: { categories: Cat[] }) {
           <div className="flex items-end gap-2">
             <div className="w-16"><label className={adminLabel}>Order</label><input name="position" type="number" min={0} defaultValue={c.position} className={adminInput} /></div>
             <button type="submit" disabled={pending} className={adminButton}>{c.id ? "Save" : "Add"}</button>
-            {c.id && <button type="button" disabled={pending} onClick={() => confirm(`Delete ${c.name}? Products stay but lose this category.`) && start(async () => { const r = await deleteCategory(c.id!); toastResult(r, "Deleted"); })} className="h-10 text-xs text-destructive underline">Delete</button>}
+            {c.id && <button type="button" disabled={pending} onClick={async () => { if (await confirm(`Delete ${c.name}? Products stay but lose this category.`, "Delete")) start(async () => { const r = await deleteCategory(c.id!); toastResult(r, "Deleted"); }); }} className="h-10 text-xs text-destructive underline">Delete</button>}
           </div>
         </form>
       ))}
+      {confirmDialog}
     </div>
   );
 }

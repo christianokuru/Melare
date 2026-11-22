@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { useConfirm } from "@/components/use-confirm";
 import { toast } from "sonner";
 import { toastResult } from "@/lib/toast-result";
 import { deleteBundle, saveBundle } from "@/app/actions/admin";
@@ -12,6 +13,7 @@ const EMPTY: Bundle = { slug: "", name: "", tagline: "", description: "", image:
 export function BundleEditor({ bundles, variants }: { bundles: Bundle[]; variants: { id: string; label: string }[] }) {
   const [editing, setEditing] = useState<Bundle | null>(null);
   const [pending, start] = useTransition();
+  const [confirm, confirmDialog] = useConfirm();
   if (editing) {
     const set = (k: keyof Bundle, v: unknown) => setEditing({ ...editing, [k]: v });
     return (
@@ -49,11 +51,12 @@ export function BundleEditor({ bundles, variants }: { bundles: Bundle[]; variant
           <div><p className="font-medium">{b.name} {!b.active && <span className="text-xs text-muted-foreground">(inactive)</span>}</p><p className="text-xs text-muted-foreground">{b.items.length} products · {b.discountPercent}% off · /bundles/{b.slug}</p></div>
           <div className="flex gap-3 text-xs">
             <button type="button" onClick={() => setEditing(b)} className="underline">Edit</button>
-            <button type="button" disabled={pending} onClick={() => confirm(`Delete ${b.name}?`) && start(async () => { const r = await deleteBundle(b.id!); toastResult(r, "Deleted"); })} className="text-destructive underline">Delete</button>
+            <button type="button" disabled={pending} onClick={async () => { if (await confirm(`Delete ${b.name}?`, "Delete")) start(async () => { const r = await deleteBundle(b.id!); toastResult(r, "Deleted"); }); }} className="text-destructive underline">Delete</button>
           </div>
         </div>
       ))}
       <button type="button" onClick={() => setEditing({ ...EMPTY })} className={`${adminButton} w-fit`}>New bundle</button>
+      {confirmDialog}
     </div>
   );
 }

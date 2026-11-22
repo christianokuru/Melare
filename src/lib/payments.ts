@@ -4,7 +4,8 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import type { Currency } from "./money";
 import { formatMoney } from "./money";
-import { OutOfStockError, lockOrder, reserveStock, stockNeeds } from "./checkout";
+import { OutOfStockError, lockOrder, logOrderEvent, reserveStock, stockNeeds } from "./checkout";
+import { pushToAdmin } from "./push";
 import { sendEmail, escapeHtml, APP_URL } from "./email";
 import { REFERRAL_REWARD } from "./constants";
 import { randomCode } from "./utils";
@@ -86,6 +87,7 @@ export async function settlePayment(tx: FlwTransaction): Promise<SettleResult> {
     if (!matches) {
       await t.update(s.payments).set({ status: "failed", raw: tx }).where(eq(s.payments.id, pay.id));
       await t.update(s.orders).set({ note: `Payment mismatch on ${tx.tx_ref}: got ${tx.amount} ${tx.currency}` }).where(eq(s.orders.id, order.id));
+      await logOrderEvent(t, order.id, order.status, `Payment mismatch: received ${tx.amount} ${tx.currency}, not marked paid`);
       alerts.push(() => alertAdmin(`Payment mismatch · ${order.number}`, `Flutterwave reported ${tx.amount} ${tx.currency} for reference ${tx.tx_ref}; expected ${formatMoney(order.total, order.currency as Currency)}. Order NOT marked paid.`));
       return { status: "mismatch", ...done };
     }
@@ -109,12 +111,14 @@ export async function settlePayment(tx: FlwTransaction): Promise<SettleResult> {
       becamePaid = true;
     } else {
       await t.update(s.orders).set({ note: `Duplicate payment received (${tx.tx_ref}); refund it` }).where(eq(s.orders.id, order.id));
+      await logOrderEvent(t, order.id, order.status, "Duplicate payment received: refund it in Flutterwave");
       alerts.push(() => alertAdmin(`Duplicate payment · ${order.number}`, `A second successful payment (${tx.tx_ref}) arrived for an order that was already ${order.status}. Refund it in Flutterwave.`));
       return { status: "paid", ...done };
     }
 
     if (becamePaid) {
       await t.update(s.orders).set({ status: "paid", paidAt: new Date() }).where(eq(s.orders.id, order.id));
+      await logOrderEvent(t, order.id, "paid", order.status === "cancelled" ? "Payment confirmed after the payment window" : "Payment confirmed");
       if (order.couponId) {
         await t.update(s.coupons).set({ redemptions: sql`${s.coupons.redemptions} + 1` }).where(eq(s.coupons.id, order.couponId));
       }
@@ -137,8 +141,12 @@ export async function settlePayment(tx: FlwTransaction): Promise<SettleResult> {
   return result;
 }
 
-export async function alertAdmin(subject: string, text: string) {
-  if (process.env.ADMIN_EMAIL) await sendEmail(process.env.ADMIN_EMAIL, subject, subject, `<p>${escapeHtml(text)}</p>`, { label: "Open dashboard", url: `${APP_URL}/admin/orders` });
+/** Emails the admin and pushes to their devices. */
+export async function alertAdmin(subject: string, text: string, path = "/admin/orders") {
+  await Promise.allSettled([
+    process.env.ADMIN_EMAIL && sendEmail(process.env.ADMIN_EMAIL, subject, subject, `<p>${escapeHtml(text)}</p>`, { label: "Open dashboard", url: `${APP_URL}${path}` }),
+    pushToAdmin({ title: subject, body: text, url: path }),
+  ]);
 }
 
 async function sendOrderEmails(orderId: string) {
@@ -155,7 +163,7 @@ ${o.discount ? `<tr><td style="color:#6B5045">Discount</td><td align="right">−
     sendEmail(o.email, `Order ${o.number} confirmed · Melaré`, "Thank you for your order",
       `<p>We’ve received your payment and we’re getting your order ready. Order number: <strong>${o.number}</strong>.</p>${table}<p style="color:#6B5045">Estimated delivery: ${escapeHtml(o.shippingZone)}.</p>`,
       { label: "View order", url }),
-    alertAdmin(`New order ${o.number} · ${formatMoney(o.total, c)}`, `${o.email} paid ${formatMoney(o.total, c)} for ${items.length} item(s). Ship to ${o.shippingAddress.city}, ${o.shippingAddress.state}, ${o.shippingAddress.country}.`),
+    alertAdmin(`New order ${o.number} · ${formatMoney(o.total, c)}`, `${o.email} paid ${formatMoney(o.total, c)} for ${items.length} item(s). Ship to ${o.shippingAddress.city}, ${o.shippingAddress.state}, ${o.shippingAddress.country}.`, `/admin/orders/${o.id}`),
   ]);
 }
 

@@ -4,14 +4,14 @@ export const SITE = {
   description:
     "Gentle, effective skincare made for melanin-rich skin. Brightening serums, barrier creams, cleansers and invisible SPF, delivered across Lagos, Nigeria and worldwide.",
   url: (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, ""),
-  whatsapp: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "",
   instagram: process.env.NEXT_PUBLIC_INSTAGRAM_URL ?? "",
   city: "Lagos",
   country: "NG",
 };
 
-export const whatsappLink = (text = "Hi Melaré, I have a question.") =>
-  SITE.whatsapp ? `https://wa.me/${SITE.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(text)}` : "/contact";
+/** `number` comes from store settings (getSettings().whatsapp). Falls back to the contact page. */
+export const whatsappLink = (number: string, text = "Hi Melaré, I have a question.") =>
+  number ? `https://wa.me/${number.replace(/\D/g, "")}?text=${encodeURIComponent(text)}` : "/contact";
 
 export const CONCERNS = [
   { slug: "dark-spots", name: "Dark spots", letter: "D", blurb: "Fade post-acne marks and hyperpigmentation gently, without bleaching." },

@@ -1,13 +1,15 @@
 "use client";
-import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { toastResult } from "@/lib/toast-result";
-import { updateProfile } from "@/app/actions/account";
+import { setMarketingEmails, updateProfile } from "@/app/actions/account";
+import { useConfirm } from "@/components/use-confirm";
 import { authClient } from "@/lib/auth-client";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { buttonOutline, buttonPrimary, inputClass, labelClass } from "@/components/site/section";
 
-export function SettingsForms({ name, phone, email }: { name: string; phone: string; email: string }) {
+export function SettingsForms({ name, phone, email, marketing }: { name: string; phone: string; email: string; marketing: boolean }) {
   const [pending, start] = useTransition();
   return (
     <div className="grid max-w-xl gap-12">
@@ -48,6 +50,51 @@ export function SettingsForms({ name, phone, email }: { name: string; phone: str
           <SignOutButton className={buttonOutline} everywhere>Sign out everywhere</SignOutButton>
         </div>
       </div>
+
+      <Privacy marketing={marketing} />
     </div>
+  );
+}
+
+/** Marketing preferences, data download and account deletion (NDPA rights). */
+function Privacy({ marketing }: { marketing: boolean }) {
+  const router = useRouter();
+  const [subscribed, setSubscribed] = useState(marketing);
+  const [pending, start] = useTransition();
+  const [confirm, confirmDialog] = useConfirm();
+  return (
+    <section className="grid gap-6" aria-labelledby="privacy">
+      <h2 id="privacy" className="font-heading text-2xl">Privacy</h2>
+      <label className="flex items-start gap-3 text-sm">
+        <input type="checkbox" checked={subscribed} disabled={pending} className="mt-0.5 size-4 accent-foreground" onChange={(e) => {
+          const next = e.target.checked;
+          setSubscribed(next);
+          start(async () => { if (!toastResult(await setMarketingEmails(next), next ? "You’re subscribed to offers" : "You won’t get marketing emails")) setSubscribed(!next); });
+        }} />
+        <span>Email me offers, launches and skincare tips.<span className="block text-muted-foreground">Order updates are always sent.</span></span>
+      </label>
+      <div className="text-sm">
+        <p className="mb-2">Get a copy of everything we hold about you: profile, addresses, orders, reviews and quiz answers.</p>
+        <a href="/account/export" download className={`${buttonOutline} w-fit`}>Download my data</a>
+      </div>
+      <form className="grid gap-3 rounded-2xl border border-destructive/30 p-5 text-sm" onSubmit={async (e) => {
+        e.preventDefault();
+        const password = String(new FormData(e.currentTarget).get("password"));
+        if (!(await confirm("Delete your account permanently? Your saved addresses, favourites, reviews and rewards will be removed. This can’t be undone.", "Delete account"))) return;
+        start(async () => {
+          const { error } = await authClient.deleteUser({ password });
+          if (error) return void toast.error(error.status === 429 ? "Too many attempts. Try again later." : error.message?.includes("admin") ? error.message : "Your password is incorrect.");
+          toast.success("Your account has been deleted.");
+          router.push("/");
+          router.refresh();
+        });
+      }}>
+        <p className="font-medium">Delete account</p>
+        <p className="text-muted-foreground">We keep records of past orders for tax and accounting, without linking them to an account.</p>
+        <div><label className={labelClass} htmlFor="del-pw">Confirm with your password</label><input id="del-pw" name="password" type="password" required autoComplete="current-password" className={inputClass} /></div>
+        <button type="submit" disabled={pending} className="h-12 w-fit rounded-full bg-destructive px-8 text-[12px] uppercase tracking-[0.14em] text-white disabled:opacity-50">Delete my account</button>
+      </form>
+      {confirmDialog}
+    </section>
   );
 }

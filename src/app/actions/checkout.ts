@@ -10,7 +10,7 @@ import { throttle } from "@/lib/throttle";
 import { randomCode } from "@/lib/utils";
 import { COUNTRIES, ORDER_PAYMENT_WINDOW_MIN } from "@/lib/constants";
 import {
-  applyCode, expireStaleOrders, lineUnit, OutOfStockError, releaseOrderStock, reserveStock, shippingFee, stockNeeds, subtotalOf, zoneFor,
+  applyCode, expireStaleOrders, lineUnit, logOrderEvent, OutOfStockError, releaseOrderStock, reserveStock, shippingFee, stockNeeds, subtotalOf, zoneFor,
   type Applied, type Buyer,
 } from "@/lib/checkout";
 import { createPaymentLink } from "@/lib/payments";
@@ -115,6 +115,7 @@ export async function placeOrder(input: z.input<typeof CheckoutInput>): Promise<
         stock: l.stock.map((st) => ({ variantId: st.variantId, quantity: st.quantity * l.quantity })),
       })));
       await tx.insert(s.payments).values({ orderId: o.id, reference, amount: total, currency });
+      await logOrderEvent(tx, o.id, "pending", "Order placed, awaiting payment");
       return o;
     });
   } catch (e) {
@@ -131,6 +132,7 @@ export async function placeOrder(input: z.input<typeof CheckoutInput>): Promise<
     await db.transaction(async (tx) => {
       await releaseOrderStock(tx, order.id);
       await tx.update(s.orders).set({ status: "cancelled", note: "Payment could not be started" }).where(eq(s.orders.id, order.id));
+      await logOrderEvent(tx, order.id, "cancelled", "Payment could not be started");
     });
     return { error: "We couldn’t connect to our payment partner. Please try again in a moment." };
   }

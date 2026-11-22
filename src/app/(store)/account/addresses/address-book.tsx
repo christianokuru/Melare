@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { useConfirm } from "@/components/use-confirm";
 import { toast } from "sonner";
 import { deleteAddress, saveAddress } from "@/app/actions/account";
 import { COUNTRIES, NG_STATES } from "@/lib/constants";
@@ -11,6 +12,7 @@ const EMPTY = { fullName: "", phone: "", line1: "", line2: "", city: "", state: 
 export function AddressBook({ addresses }: { addresses: Address[] }) {
   const [editing, setEditing] = useState<(typeof EMPTY & { id?: string }) | null>(null);
   const [pending, start] = useTransition();
+  const [confirm, confirmDialog] = useConfirm();
 
   if (editing) {
     const set = (k: string, v: string | boolean) => setEditing({ ...editing, [k]: v });
@@ -70,12 +72,13 @@ export function AddressBook({ addresses }: { addresses: Address[] }) {
             <div className="mt-4 flex gap-4 text-xs">
               <button type="button" className="underline underline-offset-4" onClick={() => setEditing({ ...EMPTY, ...a, line2: a.line2 ?? "", postalCode: a.postalCode ?? "" })}>Edit</button>
               <button type="button" disabled={pending} className="text-destructive underline underline-offset-4"
-                onClick={() => confirm("Delete this address?") && start(async () => { const r = await deleteAddress(a.id); if (!r.ok) toast.error(r.error); })}>Delete</button>
+                onClick={async () => { if (await confirm("Delete this address?", "Delete")) start(async () => { const r = await deleteAddress(a.id); if (!r.ok) toast.error(r.error); }); }}>Delete</button>
             </div>
           </li>
         ))}
       </ul>
       {addresses.length < 10 && <button type="button" onClick={() => setEditing({ ...EMPTY })} className={`${buttonOutline} w-fit`}>Add address</button>}
+      {confirmDialog}
     </div>
   );
 }

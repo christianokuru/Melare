@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { desc, ilike, or, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
-import { PageTitle, Table, td, adminInput } from "@/components/admin/ui";
+import { EmptyState, PageTitle, Table, td, adminInput } from "@/components/admin/ui";
 
 // Fresh admin check on every request, so this route blocks rather than prefetching.
 export const instant = false;
@@ -20,15 +21,16 @@ export default async function AdminCustomers({ searchParams }: PageProps<"/admin
     <>
       <PageTitle title="Customers" />
       <form className="mb-4" action="/admin/customers"><label htmlFor="cq" className="sr-only">Search</label><input id="cq" name="q" defaultValue={sp.q as string} placeholder="Search name or email" className={`${adminInput} max-w-sm`} /></form>
-      <Table head={["Customer", "Phone", "Orders", "Spent (₦)", "Joined"]}>
+      {!rows.length && <EmptyState>{q ? "No customers match your search." : "No customers yet."}</EmptyState>}
+      {rows.length > 0 && <Table head={["Customer", "Phone", "Orders", "Spent (₦)", "Joined"]}>
         {rows.map((u) => (
           <tr key={u.id}>
-            <td className={td}>{u.name}<span className="block text-xs text-muted-foreground">{u.email}{!u.verified && " · unverified"}</span></td>
+            <td className={td}><Link href={`/admin/customers/${u.id}`} className="underline underline-offset-4">{u.name}</Link><span className="block text-xs text-muted-foreground">{u.email}{!u.verified && " · unverified"}</span></td>
             <td className={td}>{u.phone ?? "-"}</td><td className={td}>{u.orders}</td><td className={td}>{formatMoney(u.spentNgn, "NGN")}</td>
             <td className={td}>{u.createdAt.toLocaleDateString("en-GB")}</td>
           </tr>
         ))}
-      </Table>
+      </Table>}
     </>
   );
 }

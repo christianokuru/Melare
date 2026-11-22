@@ -10,15 +10,19 @@ export function PageTitle({ title, action }: { title: string; action?: { label: 
   );
 }
 
-export function Table({ head, children, className }: { head: string[]; children: React.ReactNode; className?: string }) {
+export function Table({ head, children, className }: { head: React.ReactNode[]; children: React.ReactNode; className?: string }) {
   return (
     <div className={cn("overflow-x-auto rounded-2xl border bg-white", className)}>
       <table className="w-full min-w-[640px] text-left text-sm">
-        <thead className="bg-blush/60 text-xs uppercase tracking-[0.08em] text-muted-foreground"><tr>{head.map((h) => <th key={h} className="px-4 py-3 font-normal">{h}</th>)}</tr></thead>
+        <thead className="bg-blush/60 text-xs uppercase tracking-[0.08em] text-muted-foreground"><tr>{head.map((h, i) => <th key={i} className="px-4 py-3 font-normal">{h}</th>)}</tr></thead>
         <tbody className="divide-y">{children}</tbody>
       </table>
     </div>
   );
+}
+
+export function EmptyState({ children }: { children: React.ReactNode }) {
+  return <p className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
 export const td = "px-4 py-3 align-middle";

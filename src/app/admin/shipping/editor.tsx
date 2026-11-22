@@ -1,5 +1,6 @@
 "use client";
 import { useTransition } from "react";
+import { useConfirm } from "@/components/use-confirm";
 import { toastResult } from "@/lib/toast-result";
 import { deleteZone, saveZone } from "@/app/actions/admin";
 import { adminButton, adminInput, adminLabel } from "@/components/admin/ui";
@@ -10,6 +11,7 @@ const minor = (v: FormDataEntryValue | null) => (String(v ?? "").trim() === "" ?
 
 export function ZoneEditor({ zones }: { zones: Zone[] }) {
   const [pending, start] = useTransition();
+  const [confirm, confirmDialog] = useConfirm();
   const rows: Zone[] = [...zones, { name: "", country: "", state: "", feeNgn: 0, feeUsd: 0, freeOverNgn: null, freeOverUsd: null, eta: "", position: zones.length + 1 }];
   return (
     <div className="grid gap-3">
@@ -29,10 +31,11 @@ export function ZoneEditor({ zones }: { zones: Zone[] }) {
           ))}
           <div className="flex items-end gap-2">
             <button type="submit" disabled={pending} className={adminButton}>{z.id ? "Save" : "Add"}</button>
-            {z.id && <button type="button" disabled={pending} onClick={() => confirm(`Delete ${z.name}?`) && start(async () => { const r = await deleteZone(z.id!); toastResult(r, "Deleted"); })} className="h-10 text-xs text-destructive underline">Delete</button>}
+            {z.id && <button type="button" disabled={pending} onClick={async () => { if (await confirm(`Delete ${z.name}?`, "Delete")) start(async () => { const r = await deleteZone(z.id!); toastResult(r, "Deleted"); }); }} className="h-10 text-xs text-destructive underline">Delete</button>}
           </div>
         </form>
       ))}
+      {confirmDialog}
     </div>
   );
 }

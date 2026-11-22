@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { CONCERNS, SITE, whatsappLink } from "@/lib/constants";
+import { getSettings } from "@/lib/settings";
 import { NewsletterForm } from "./newsletter-form";
 import { CookieSettingsLink } from "@/components/cookie-banner";
 import { ChatIcon, GlobeIcon, ShieldIcon, TruckIcon } from "./icons";
@@ -12,12 +13,13 @@ const COLUMNS = [
   { title: "Melaré", links: [["Our story", "/about"], ["Journal", "/journal"], ["My account", "/account"], ["Privacy", "/privacy"], ["Terms", "/terms"]] },
 ];
 
-export function Footer() {
+export async function Footer() {
+  const { whatsapp } = await getSettings();
   const services = [
     { icon: TruckIcon, title: "Fast delivery", text: "Lagos in 1–2 days" },
     { icon: GlobeIcon, title: "Ships worldwide", text: "7–14 business days" },
     { icon: ShieldIcon, title: "Secure payment", text: "Card, transfer or USSD" },
-    { icon: ChatIcon, title: "Need help?", text: "Chat with us on WhatsApp", href: whatsappLink() },
+    { icon: ChatIcon, title: "Need help?", text: "Chat with us on WhatsApp", href: whatsappLink(whatsapp) },
   ];
   return (
     <footer className="mt-24">

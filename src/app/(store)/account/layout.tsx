@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "My account", robots: { index: false,
 
 export default function AccountLayout({ children }: LayoutProps<"/account">) {
   return (
-    <div className={`${container} pt-8`}>
+    <div className={`${container} pt-8 max-lg:pb-24`}>
       <h1 className="font-heading text-[40px] leading-none lg:text-5xl">My account</h1>
       <Suspense fallback={<div className="my-6 h-[53px] border-b" />}><AccountNav /></Suspense>
       <Suspense fallback={null}><AdminToDashboard /></Suspense>

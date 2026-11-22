@@ -54,6 +54,7 @@ scripts/seed.ts  scripts/migrate-images.ts  tests/payments.test.ts  tests/storag
 - **Bundles:** `bundles` (discount 1–50%) + `bundle_items` (variant, qty). Price = component sum − discount.
 - **Customer:** `addresses` (≤10), `carts`/`cart_items` (variant XOR bundle, qty 1–10), `wishlist`, `reviews` (verified buyers, moderated), `subscribers`, `stock_alerts`, `quiz_results`
 - **Commerce:** `shipping_zones`, `coupons` (percent XOR fixed NGN+USD, min subtotal, max uses, expiry, personal `user_id`, influencer `owner_name`), `orders` (random `MLR-XXXXXXXX` number, address snapshot, `stock_reserved`, `expires_at`), `order_items` (price snapshot + reserved `stock` jsonb), `payments` (unique `reference`, unique `transaction_id`)
+- **Ops:** `order_events` (order timeline), `push_subscriptions` (admin devices), `settings` (WhatsApp number, banner text)
 - **Infra:** `throttle` (rate limits)
 
 Money is always integer minor units (kobo/cents). DB check constraints enforce non-negative stock, positive prices/totals, valid quantities and coupon shape.
@@ -92,6 +93,10 @@ WhatsApp chat (wa.me, free) · shop by concern · routine bundles · delivery es
 
 ## SEO
 Per-page metadata + canonicals, Product (NGN + USD offers, rating), BreadcrumbList, Organization/WebSite (SearchAction), Article, FAQPage JSON-LD; `sitemap.xml`, `robots.txt`, OG image; real 404s for crawlers; semantic HTML, fast LCP (priority hero, AVIF/WebP, static shells); keyword-targeted copy for Nigeria/Lagos and melanin-rich skin; journal articles.
+
+## Dashboards
+- **Admin:** date-range stats (revenue NGN/USD, orders, average order, to ship, customers), daily sales chart, best sellers, low stock; sidebar badges (to ship, reviews); orders search (number/name/email/phone), status tabs with counts, date filter, CSV export, bulk "preparing"/"delivered"; order timeline, call/WhatsApp/email, printable packing slip; products search/filter, inline stock edit (restock alerts fire), duplicate, drag-to-reorder images; customer profile page; abandoned bags; store settings; Web Push new-order alerts (VAPID, endpoints restricted to browser push services).
+- **Customer:** order tracker with dates, buy again, running-low reorders (`days_supply`), review prompts, rewards wallet + referral stats/sharing, skin profile from the quiz, marketing opt-in, data export (JSON) and account deletion (password, orders kept unlinked), mobile bottom tab bar.
 
 ## Tests
 `npm test` runs integration tests against the database: concurrent stock reservation (no oversell), idempotent settlement, amount/currency mismatch, failed payments, expiry + late payment, duplicate payment, coupon rules and referral rules.
