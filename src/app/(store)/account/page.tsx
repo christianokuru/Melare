@@ -8,6 +8,9 @@ import { REFERRAL_REWARD, SITE } from "@/lib/constants";
 import { StatusBadge } from "@/components/order/order-view";
 import { CopyButton } from "./copy-button";
 
+// Fresh session check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AccountPage() {
   const { user } = await requireUser("/account");
   const [orders, rewards] = await Promise.all([

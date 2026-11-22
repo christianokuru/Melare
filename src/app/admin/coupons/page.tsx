@@ -5,6 +5,9 @@ import { formatMoney } from "@/lib/money";
 import { PageTitle, Table, td } from "@/components/admin/ui";
 import { CouponCreate, CouponToggle } from "./coupon-forms";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AdminCoupons() {
   await requireAdmin();
   const coupons = await db.select({

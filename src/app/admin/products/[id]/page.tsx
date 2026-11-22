@@ -6,6 +6,9 @@ import { db, schema as s } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { ProductForm } from "./product-form";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AdminProduct({ params }: PageProps<"/admin/products/[id]">) {
   await requireAdmin();
   const { id } = await params;

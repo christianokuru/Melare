@@ -4,6 +4,9 @@ import { listOrders } from "@/lib/account";
 import { formatMoney, type Currency } from "@/lib/money";
 import { StatusBadge } from "@/components/order/order-view";
 
+// Fresh session check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function OrdersPage() {
   const { user } = await requireUser("/account/orders");
   const orders = await listOrders(user.id, user.email);

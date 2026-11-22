@@ -9,6 +9,9 @@ import { OrderView } from "@/components/order/order-view";
 import { Table, td } from "@/components/admin/ui";
 import { OrderStatusForm } from "./status-form";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AdminOrder({ params }: PageProps<"/admin/orders/[id]">) {
   await requireAdmin();
   const { id } = await params;

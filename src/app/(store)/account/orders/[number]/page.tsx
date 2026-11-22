@@ -8,6 +8,9 @@ import type { Currency } from "@/lib/money";
 import { OrderView } from "@/components/order/order-view";
 import { RetryPayment } from "./retry-payment";
 
+// Fresh session check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function OrderPage({ params }: PageProps<"/account/orders/[number]">) {
   const { number } = await params;
   const { user } = await requireUser(`/account/orders/${number}`);

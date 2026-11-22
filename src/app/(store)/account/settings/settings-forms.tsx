@@ -1,14 +1,13 @@
 "use client";
-import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { toastResult } from "@/lib/toast-result";
 import { updateProfile } from "@/app/actions/account";
 import { authClient } from "@/lib/auth-client";
+import { SignOutButton } from "@/components/auth/sign-out-button";
 import { buttonOutline, buttonPrimary, inputClass, labelClass } from "@/components/site/section";
 
 export function SettingsForms({ name, phone, email }: { name: string; phone: string; email: string }) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   return (
     <div className="grid max-w-xl gap-12">
@@ -45,8 +44,8 @@ export function SettingsForms({ name, phone, email }: { name: string; phone: str
       <div className="grid gap-3">
         <h2 className="font-heading text-2xl">Sign out</h2>
         <div className="flex flex-wrap gap-3">
-          <button type="button" className={buttonOutline} onClick={() => start(async () => { await authClient.signOut(); router.push("/"); router.refresh(); })}>Sign out</button>
-          <button type="button" className={buttonOutline} onClick={() => start(async () => { await authClient.revokeSessions(); router.push("/sign-in"); router.refresh(); })}>Sign out everywhere</button>
+          <SignOutButton className={buttonOutline} />
+          <SignOutButton className={buttonOutline} everywhere>Sign out everywhere</SignOutButton>
         </div>
       </div>
     </div>

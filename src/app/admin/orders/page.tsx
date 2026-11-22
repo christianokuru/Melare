@@ -7,6 +7,9 @@ import { PageTitle, Table, td, adminInput } from "@/components/admin/ui";
 import { StatusBadge, STATUS_LABEL } from "@/components/order/order-view";
 import { cn } from "@/lib/utils";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 const PER_PAGE = 30;
 
 export default async function AdminOrders({ searchParams }: PageProps<"/admin/orders">) {

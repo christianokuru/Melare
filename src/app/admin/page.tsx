@@ -6,6 +6,9 @@ import { formatMoney, type Currency } from "@/lib/money";
 import { PageTitle, Table, td, adminGhost } from "@/components/admin/ui";
 import { StatusBadge } from "@/components/order/order-view";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 const PAID = ["paid", "processing", "shipped", "delivered"] as const;
 
 export default async function AdminHome() {

@@ -4,6 +4,9 @@ import { requireAdmin } from "@/lib/auth";
 import { PageTitle } from "@/components/admin/ui";
 import { BundleEditor } from "./editor";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AdminBundles() {
   await requireAdmin();
   const [bundles, items, variants] = await Promise.all([

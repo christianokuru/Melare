@@ -4,6 +4,9 @@ import { requireAdmin } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
 import { PageTitle, Table, td, adminInput } from "@/components/admin/ui";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AdminCustomers({ searchParams }: PageProps<"/admin/customers">) {
   await requireAdmin();
   const sp = await searchParams;

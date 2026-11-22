@@ -4,6 +4,9 @@ import { requireAdmin } from "@/lib/auth";
 import { PageTitle } from "@/components/admin/ui";
 import { ZoneEditor } from "./editor";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AdminShipping() {
   await requireAdmin();
   const zones = await db.select().from(s.shippingZones).orderBy(asc(s.shippingZones.position));

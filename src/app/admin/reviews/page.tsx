@@ -5,6 +5,9 @@ import { PageTitle } from "@/components/admin/ui";
 import { Stars } from "@/components/product/stars";
 import { ReviewActions } from "./review-actions";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AdminReviews() {
   await requireAdmin();
   const rows = await db.select({ r: s.reviews, product: s.products.name, email: s.user.email }).from(s.reviews)

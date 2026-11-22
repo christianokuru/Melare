@@ -3,6 +3,9 @@ import { db, schema as s } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { PageTitle, Table, td } from "@/components/admin/ui";
 
+// Fresh admin check on every request, so this route blocks rather than prefetching.
+export const instant = false;
+
 export default async function AdminSubscribers() {
   await requireAdmin();
   const [rows, [{ n }]] = await Promise.all([
