@@ -10,7 +10,7 @@ Mobile-first PWA skincare store. One Next.js app on Vercel (UI + API).
 | Auth | Better Auth (email/password, Google, `admin` plugin for roles) |
 | DB | Neon Postgres + Drizzle ORM (`neon-http` driver) |
 | Media | Cloudflare R2 (S3 API, presigned uploads, custom-domain CDN) |
-| Payments | Paystack (NGN), Flutterwave (NGN fallback / Africa), Stripe (USD/foreign) |
+| Payments | Flutterwave only (NGN + USD) |
 | Email | Resend (order confirmations, auth emails) |
 
 ## Folder structure
@@ -26,7 +26,7 @@ src/
       auth/[...all]/       # Better Auth handler
       uploads/             # POST presigned R2 URL (admin)
       checkout/            # POST create order + init payment
-      webhooks/[provider]/ # paystack | flutterwave | stripe
+      webhooks/flutterwave/
     manifest.ts  offline/
   components/ui/       # shadcn
   db/schema.ts  db/index.ts
@@ -54,18 +54,18 @@ Money = integer minor units (kobo/cents). Never floats.
 | POST | `/api/uploads` | Presigned R2 PUT URL `{ uploadUrl, key, url }` | admin |
 | POST | `/api/checkout` | Validate cart → create `pending` order → init payment → return redirect URL | user/guest |
 | GET | `/api/checkout/verify?ref=` | Verify payment after redirect (fallback to webhook) | — |
-| POST | `/api/webhooks/[provider]` | Verify signature → mark paid → decrement stock (idempotent on `reference`) | signature |
+| POST | `/api/webhooks/flutterwave` | Verify `verif-hash` → re-verify tx → mark paid → decrement stock (idempotent on `reference`) | signature |
 
 Server Actions: `addToCart`, `updateCartItem`, `removeCartItem`, `toggleWishlist`, `saveAddress`, `submitReview`, `applyCoupon`, admin `upsertProduct`, `updateOrderStatus`, etc.
 
 ## Checkout flow
-1. Currency from geo (`x-vercel-ip-country`) or user toggle: NG → NGN, else USD.
-2. `POST /api/checkout` recomputes prices server-side (never trust client), writes `orders` + `order_items` + `payments` in one `db.batch`.
-3. Redirect to Paystack/Flutterwave/Stripe hosted checkout.
-4. Webhook confirms → order `paid`, stock decremented, confirmation email via Resend.
+1. Currency: customer toggles ₦ NGN / $ USD (`CurrencySwitcher` → `currency` cookie). First visit defaults from `x-vercel-ip-country` (NG → NGN, else USD). Each variant has its own `price_ngn` and `price_usd`, no FX conversion.
+2. `POST /api/checkout` recomputes prices server-side in the chosen currency (never trust client), writes `orders` + `order_items` + `payments` in one `db.batch`.
+3. `initPayment()` → redirect to Flutterwave hosted checkout (card, bank transfer, USSD for NGN; card for USD).
+4. Redirect back to `/checkout/complete?transaction_id=` → `verifyTransaction()`; webhook does the same as backup. Order `paid`, stock decremented, email via Resend.
 
 ## R2 media
-- Private bucket + custom domain (e.g. `cdn.melare.com`) for public reads, zero egress fees.
+- Public reads via a **subdomain of the store's domain** (e.g. `cdn.melare.com`). No extra domain needed, but the domain's DNS must be on Cloudflare (Vercel still hosts the site). During development use the bucket's `r2.dev` URL (rate-limited, not for production).
 - Admin uploads go browser → R2 directly via presigned PUT (avoids Vercel 4.5 MB body limit).
 - DB stores only the object **key**; `publicUrl(key)` builds the URL; `next/image` optimises it (`remotePatterns` set from `NEXT_PUBLIC_R2_PUBLIC_URL`).
 - Configure bucket CORS to allow `PUT` from your app origins.

@@ -161,7 +161,7 @@ export const reviews = pgTable("reviews", {
 export const orderStatus = pgEnum("order_status", [
   "pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded",
 ]);
-export const paymentProvider = pgEnum("payment_provider", ["paystack", "flutterwave", "stripe"]);
+export const paymentProvider = pgEnum("payment_provider", ["flutterwave"]);
 export const paymentStatus = pgEnum("payment_status", ["initiated", "success", "failed", "refunded"]);
 
 export const coupons = pgTable("coupons", {
@@ -207,8 +207,9 @@ export const orderItems = pgTable("order_items", {
 export const payments = pgTable("payments", {
   id: id(),
   orderId: text("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
-  provider: paymentProvider("provider").notNull(),
-  reference: text("reference").notNull().unique(), // idempotency key for webhooks
+  provider: paymentProvider("provider").default("flutterwave").notNull(),
+  reference: text("reference").notNull().unique(), // our tx_ref, idempotency key for webhooks
+  flwTransactionId: text("flw_transaction_id"),
   status: paymentStatus("status").default("initiated").notNull(),
   amount: integer("amount").notNull(),
   currency: text("currency").notNull(),
