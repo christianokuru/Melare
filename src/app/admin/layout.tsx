@@ -22,7 +22,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
         <Suspense fallback={<div className="h-12" />}><AdminNav /></Suspense>
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 lg:px-10 lg:py-10">
-        <div className="mx-auto w-full max-w-6xl"><Suspense fallback={<div className="h-64 animate-pulse rounded-2xl bg-sand" />}>{children}</Suspense></div>
+        <div className="mx-auto w-full max-w-[1400px]"><Suspense fallback={<div className="h-64 animate-pulse rounded-2xl bg-sand" />}>{children}</Suspense></div>
       </main>
     </div>
   );
