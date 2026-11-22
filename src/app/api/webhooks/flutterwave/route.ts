@@ -1,15 +1,17 @@
-import { verifyTransaction, verifyWebhook } from "@/lib/payments";
+import { revalidateTag } from "next/cache";
+import { isValidWebhook, settlePayment, verifyByReference } from "@/lib/payments";
+import { CATALOG_TAG } from "@/lib/catalog";
 
 // POST /api/webhooks/flutterwave
+// 1) secret hash must match  2) never trust the body: re-verify with Flutterwave by OUR reference  3) settle idempotently
 export async function POST(req: Request) {
-  if (!verifyWebhook(req.headers)) return new Response("Invalid signature", { status: 401 });
-  const event = await req.json();
-  if (event?.event === "charge.completed" && event.data?.id) {
-    const tx = await verifyTransaction(String(event.data.id));
-    if (tx?.status === "successful") {
-      // TODO: find payment by tx.tx_ref → check amount/currency match order →
-      // db.batch([payments → success, orders → paid, product_variants.stock -= qty]) (skip if already success)
-    }
-  }
-  return new Response("ok"); // always 200 quickly so Flutterwave doesn't retry
+  if (!isValidWebhook(req.headers)) return new Response("Unauthorized", { status: 401 });
+  const body = await req.json().catch(() => null);
+  const ref = body?.data?.tx_ref ?? body?.txRef;
+  if (typeof ref !== "string" || ref.length > 64) return new Response("ok");
+  const tx = await verifyByReference(ref);
+  if (!tx || tx.tx_ref !== ref) return new Response("ok");
+  const result = await settlePayment(tx);
+  if (result.status === "paid") revalidateTag(CATALOG_TAG, "max");
+  return new Response("ok");
 }

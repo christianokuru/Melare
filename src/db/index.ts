@@ -1,7 +1,13 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import "server-only";
+import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-serverless";
 import * as schema from "./schema";
 
-// HTTP driver: ideal for Vercel serverless. Use db.batch([...]) for atomic multi-writes (checkout).
-export const db = drizzle(neon(process.env.DATABASE_URL!), { schema, casing: "snake_case" });
+// WebSocket pool: supports interactive transactions (row locks for checkout/payments).
+const globalForDb = globalThis as unknown as { pool?: Pool };
+const pool = globalForDb.pool ?? new Pool({ connectionString: process.env.DATABASE_URL });
+if (process.env.NODE_ENV !== "production") globalForDb.pool = pool;
+
+export const db = drizzle(pool, { schema });
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export { schema };

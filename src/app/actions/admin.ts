@@ -1,0 +1,315 @@
+"use server";
+import { z } from "zod";
+import { refresh, updateTag } from "next/cache";
+import { eq, inArray } from "drizzle-orm";
+import { db, schema as s } from "@/db";
+import { requireAdmin } from "@/lib/auth";
+import { CATALOG_TAG } from "@/lib/catalog";
+import { releaseOrderStock } from "@/lib/checkout";
+import { sendEmail, escapeHtml, APP_URL } from "@/lib/email";
+import { CONCERNS, SKIN_TYPES } from "@/lib/constants";
+import { slugify } from "@/lib/utils";
+
+type Result = { ok: true; id?: string } | { ok: false; error: string };
+const fail = (e: z.ZodError): Result => ({ ok: false, error: e.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`)[0] });
+const uuid = z.string().uuid();
+const slug = z.string().trim().min(2).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes");
+const imagePath = z.string().trim().regex(/^\/images\/[a-z0-9][a-z0-9/_-]*\.(webp|jpe?g|png|avif)$/i, "must be a /images/… file in the repo");
+const money = z.coerce.number().int().min(1).max(1_000_000_000); // minor units
+const optMoney = z.union([money, z.literal(null)]).optional().default(null);
+
+function done(id?: string): Result {
+  updateTag(CATALOG_TAG);
+  refresh();
+  return { ok: true, id };
+}
+
+/* ───────────── Products ───────────── */
+const ProductInput = z.object({
+  id: uuid.optional(),
+  slug, name: z.string().trim().min(2).max(100), tagline: z.string().trim().min(2).max(140),
+  description: z.string().trim().min(10).max(5000), benefits: z.array(z.string().trim().min(2).max(120)).max(8),
+  ingredients: z.string().trim().max(3000).optional().default(""), howToUse: z.string().trim().max(2000).optional().default(""),
+  skinTypes: z.array(z.enum(SKIN_TYPES)).max(5), concerns: z.array(z.enum(CONCERNS.map((c) => c.slug) as [string, ...string[]])).max(6),
+  categoryId: uuid.nullable(), status: z.enum(["draft", "active", "archived"]), featured: z.boolean(),
+  daysSupply: z.union([z.coerce.number().int().min(7).max(365), z.literal(null)]),
+  seoTitle: z.string().trim().max(70).optional().default(""), seoDescription: z.string().trim().max(160).optional().default(""),
+  variants: z.array(z.object({
+    id: uuid.optional(), sku: z.string().trim().min(2).max(40).regex(/^[A-Z0-9-]+$/, "SKU: A–Z, 0–9, dashes"), label: z.string().trim().min(1).max(40),
+    priceNgn: money, priceUsd: money, compareAtNgn: optMoney, compareAtUsd: optMoney, stock: z.coerce.number().int().min(0).max(100000),
+  })).min(1).max(10),
+  images: z.array(z.object({ src: imagePath, alt: z.string().trim().min(2).max(140) })).min(1).max(8),
+});
+
+export async function saveProduct(input: z.input<typeof ProductInput>): Promise<Result> {
+  await requireAdmin();
+  const parsed = ProductInput.safeParse(input);
+  if (!parsed.success) return fail(parsed.error);
+  const { id, variants, images, ...p } = parsed.data;
+  const values = { ...p, ingredients: p.ingredients || null, howToUse: p.howToUse || null, seoTitle: p.seoTitle || null, seoDescription: p.seoDescription || null };
+  const restocked: string[] = [];
+  try {
+    const productId = await db.transaction(async (tx) => {
+      let pid = id;
+      if (pid) {
+        const r = await tx.update(s.products).set(values).where(eq(s.products.id, pid)).returning({ id: s.products.id });
+        if (!r.length) throw new AdminError("Product not found");
+      } else {
+        [{ id: pid }] = await tx.insert(s.products).values(values).returning({ id: s.products.id });
+      }
+      const existing = await tx.select().from(s.productVariants).where(eq(s.productVariants.productId, pid!));
+      const keep = variants.flatMap((v) => (v.id ? [v.id] : []));
+      if (keep.some((k) => !existing.find((e) => e.id === k))) throw new AdminError("Variant does not belong to this product");
+      const removed = existing.filter((e) => !keep.includes(e.id)).map((e) => e.id);
+      if (removed.length) await tx.delete(s.productVariants).where(inArray(s.productVariants.id, removed));
+      for (const [position, v] of variants.entries()) {
+        const row = { ...v, position, productId: pid! };
+        if (v.id) {
+          const before = existing.find((e) => e.id === v.id)!;
+          if (before.stock === 0 && v.stock > 0) restocked.push(v.id);
+          await tx.update(s.productVariants).set(row).where(eq(s.productVariants.id, v.id));
+        } else {
+          await tx.insert(s.productVariants).values(row);
+        }
+      }
+      await tx.delete(s.productImages).where(eq(s.productImages.productId, pid!));
+      await tx.insert(s.productImages).values(images.map((im, position) => ({ ...im, position, productId: pid! })));
+      return pid!;
+    });
+    if (restocked.length) await sendRestockAlerts(restocked);
+    return done(productId);
+  } catch (e) {
+    if (e instanceof AdminError) return { ok: false, error: e.message };
+    if (String((e as { code?: string }).code) === "23505") return { ok: false, error: "Slug or SKU already in use." };
+    throw e;
+  }
+}
+
+async function sendRestockAlerts(variantIds: string[]) {
+  const rows = await db.select({ email: s.stockAlerts.email, variantId: s.stockAlerts.variantId, label: s.productVariants.label, name: s.products.name, slug: s.products.slug })
+    .from(s.stockAlerts).innerJoin(s.productVariants, eq(s.productVariants.id, s.stockAlerts.variantId))
+    .innerJoin(s.products, eq(s.products.id, s.productVariants.productId)).where(inArray(s.stockAlerts.variantId, variantIds));
+  await Promise.allSettled(rows.map((r) => sendEmail(r.email, `${r.name} is back in stock`, "It’s back",
+    `<p>Good news: <strong>${escapeHtml(r.name)} (${escapeHtml(r.label)})</strong> is back in stock. Popular items sell out quickly.</p>`,
+    { label: "Shop now", url: `${APP_URL}/products/${r.slug}` })));
+  await db.delete(s.stockAlerts).where(inArray(s.stockAlerts.variantId, variantIds));
+}
+
+export async function archiveProduct(id: string): Promise<Result> {
+  await requireAdmin();
+  if (!uuid.safeParse(id).success) return { ok: false, error: "Invalid product." };
+  await db.update(s.products).set({ status: "archived", featured: false }).where(eq(s.products.id, id));
+  return done();
+}
+
+/* ───────────── Categories ───────────── */
+const CategoryInput = z.object({
+  id: uuid.optional(), slug, name: z.string().trim().min(2).max(60), description: z.string().trim().max(500).optional().default(""),
+  image: z.union([imagePath, z.literal("")]).optional().default(""), position: z.coerce.number().int().min(0).max(999),
+});
+
+export async function saveCategory(input: z.input<typeof CategoryInput>): Promise<Result> {
+  await requireAdmin();
+  const parsed = CategoryInput.safeParse(input);
+  if (!parsed.success) return fail(parsed.error);
+  const { id, ...c } = parsed.data;
+  const values = { ...c, description: c.description || null, image: c.image || null };
+  try {
+    if (id) await db.update(s.categories).set(values).where(eq(s.categories.id, id));
+    else await db.insert(s.categories).values(values);
+  } catch (e) {
+    if (String((e as { code?: string }).code) === "23505") return { ok: false, error: "Slug already in use." };
+    throw e;
+  }
+  return done();
+}
+
+export async function deleteCategory(id: string): Promise<Result> {
+  await requireAdmin();
+  if (!uuid.safeParse(id).success) return { ok: false, error: "Invalid category." };
+  await db.delete(s.categories).where(eq(s.categories.id, id)); // products keep existing (category set null)
+  return done();
+}
+
+/* ───────────── Bundles ───────────── */
+const BundleInput = z.object({
+  id: uuid.optional(), slug, name: z.string().trim().min(2).max(80), tagline: z.string().trim().min(2).max(140),
+  description: z.string().trim().min(10).max(3000), image: imagePath, discountPercent: z.coerce.number().int().min(1).max(50), active: z.boolean(),
+  items: z.array(z.object({ variantId: uuid, quantity: z.coerce.number().int().min(1).max(5) })).min(2).max(8)
+    .refine((xs) => new Set(xs.map((x) => x.variantId)).size === xs.length, "Each product can appear once"),
+});
+
+export async function saveBundle(input: z.input<typeof BundleInput>): Promise<Result> {
+  await requireAdmin();
+  const parsed = BundleInput.safeParse(input);
+  if (!parsed.success) return fail(parsed.error);
+  const { id, items, ...b } = parsed.data;
+  try {
+    await db.transaction(async (tx) => {
+      const found = await tx.select({ id: s.productVariants.id }).from(s.productVariants).where(inArray(s.productVariants.id, items.map((i) => i.variantId)));
+      if (found.length !== items.length) throw new AdminError("One of the products no longer exists");
+      let bid = id;
+      if (bid) await tx.update(s.bundles).set(b).where(eq(s.bundles.id, bid));
+      else [{ id: bid }] = await tx.insert(s.bundles).values(b).returning({ id: s.bundles.id });
+      await tx.delete(s.bundleItems).where(eq(s.bundleItems.bundleId, bid!));
+      await tx.insert(s.bundleItems).values(items.map((i) => ({ ...i, bundleId: bid! })));
+    });
+  } catch (e) {
+    if (e instanceof AdminError) return { ok: false, error: e.message };
+    if (String((e as { code?: string }).code) === "23505") return { ok: false, error: "Slug already in use." };
+    throw e;
+  }
+  return done();
+}
+
+export async function deleteBundle(id: string): Promise<Result> {
+  await requireAdmin();
+  if (!uuid.safeParse(id).success) return { ok: false, error: "Invalid bundle." };
+  await db.delete(s.bundles).where(eq(s.bundles.id, id));
+  return done();
+}
+
+/* ───────────── Coupons ───────────── */
+const CouponInput = z.object({
+  code: z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{3,32}$/, "3–32 letters, numbers, dashes"),
+  kind: z.enum(["percent", "amount"]),
+  percentOff: z.coerce.number().int().min(1).max(90).optional(),
+  amountOffNgn: money.optional(), amountOffUsd: money.optional(),
+  minSubtotalNgn: optMoney, minSubtotalUsd: optMoney,
+  maxRedemptions: z.union([z.coerce.number().int().min(1).max(1_000_000), z.literal(null)]).optional().default(null),
+  expiresAt: z.union([z.coerce.date(), z.literal(null)]).optional().default(null),
+  ownerName: z.string().trim().max(60).optional().default(""),
+}).refine((c) => (c.kind === "percent" ? c.percentOff != null : c.amountOffNgn != null && c.amountOffUsd != null), "Enter the discount value");
+
+export async function createCoupon(input: z.input<typeof CouponInput>): Promise<Result> {
+  await requireAdmin();
+  const parsed = CouponInput.safeParse(input);
+  if (!parsed.success) return fail(parsed.error);
+  const { kind, percentOff, amountOffNgn, amountOffUsd, ownerName, ...c } = parsed.data;
+  try {
+    await db.insert(s.coupons).values({
+      ...c, ownerName: ownerName || null,
+      ...(kind === "percent" ? { percentOff } : { amountOffNgn, amountOffUsd }),
+    });
+  } catch (e) {
+    if (String((e as { code?: string }).code) === "23505") return { ok: false, error: "That code already exists." };
+    throw e;
+  }
+  refresh();
+  return { ok: true };
+}
+
+export async function setCouponActive(id: string, active: boolean): Promise<Result> {
+  await requireAdmin();
+  if (!uuid.safeParse(id).success) return { ok: false, error: "Invalid coupon." };
+  await db.update(s.coupons).set({ active: !!active }).where(eq(s.coupons.id, id));
+  refresh();
+  return { ok: true };
+}
+
+/* ───────────── Reviews ───────────── */
+export async function moderateReview(id: string, action: "approve" | "hide" | "delete"): Promise<Result> {
+  await requireAdmin();
+  if (!uuid.safeParse(id).success || !["approve", "hide", "delete"].includes(action)) return { ok: false, error: "Invalid request." };
+  if (action === "delete") await db.delete(s.reviews).where(eq(s.reviews.id, id));
+  else await db.update(s.reviews).set({ approved: action === "approve" }).where(eq(s.reviews.id, id));
+  return done();
+}
+
+/* ───────────── Orders ───────────── */
+const TRANSITIONS: Record<string, string[]> = {
+  pending: ["cancelled"],
+  paid: ["processing", "shipped", "cancelled", "refunded"],
+  processing: ["shipped", "cancelled", "refunded"],
+  shipped: ["delivered", "refunded"],
+  delivered: ["refunded"],
+  cancelled: [],
+  refunded: [],
+};
+
+const OrderInput = z.object({
+  id: uuid,
+  status: z.enum(["pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded"]),
+  trackingNumber: z.string().trim().max(80).optional().default(""),
+  note: z.string().trim().max(500).optional().default(""),
+  restock: z.boolean().optional().default(true),
+});
+
+export async function updateOrder(input: z.input<typeof OrderInput>): Promise<Result> {
+  await requireAdmin();
+  const parsed = OrderInput.safeParse(input);
+  if (!parsed.success) return fail(parsed.error);
+  const d = parsed.data;
+  let notify: { email: string; number: string; status: string; tracking: string | null } | null = null;
+  try {
+    await db.transaction(async (tx) => {
+      const [o] = await tx.select().from(s.orders).where(eq(s.orders.id, d.id)).for("update");
+      if (!o) throw new AdminError("Order not found");
+      const changing = d.status !== o.status;
+      if (changing && !TRANSITIONS[o.status].includes(d.status)) throw new AdminError(`Can’t move an order from ${o.status} to ${d.status}`);
+      if (d.status === "shipped" && changing && !d.trackingNumber) throw new AdminError("Add a tracking number before marking as shipped");
+      if (changing && (d.status === "cancelled" || (d.status === "refunded" && d.restock))) await releaseOrderStock(tx, o.id);
+      const now = new Date();
+      await tx.update(s.orders).set({
+        status: d.status, trackingNumber: d.trackingNumber || null, note: d.note || null,
+        ...(changing && d.status === "shipped" ? { shippedAt: now } : {}),
+        ...(changing && d.status === "delivered" ? { deliveredAt: now } : {}),
+      }).where(eq(s.orders.id, o.id));
+      if (changing && ["shipped", "delivered", "cancelled", "refunded"].includes(d.status)) {
+        notify = { email: o.email, number: o.number, status: d.status, tracking: d.trackingNumber || null };
+      }
+    });
+  } catch (e) {
+    if (e instanceof AdminError) return { ok: false, error: e.message };
+    throw e;
+  }
+  if (notify) await sendStatusEmail(notify);
+  return done();
+}
+
+async function sendStatusEmail(n: { email: string; number: string; status: string; tracking: string | null }) {
+  const copy: Record<string, string> = {
+    shipped: `Your order is on its way.${n.tracking ? ` Tracking number: <strong>${escapeHtml(n.tracking)}</strong>.` : ""}`,
+    delivered: "Your order has been delivered. We hope you love it. We’d be grateful for a review once you’ve tried it.",
+    cancelled: "Your order has been cancelled. If you were charged, your refund will be processed to your original payment method.",
+    refunded: "Your refund has been processed to your original payment method. It may take a few business days to appear.",
+  };
+  await sendEmail(n.email, `Order ${n.number} · ${n.status}`, `Order ${n.number} ${n.status}`, `<p>${copy[n.status]}</p>`,
+    { label: "Track order", url: `${APP_URL}/track?number=${n.number}` });
+}
+
+/* ───────────── Shipping zones ───────────── */
+const ZoneInput = z.object({
+  id: uuid.optional(), name: z.string().trim().min(2).max(60),
+  country: z.string().trim().toUpperCase().regex(/^([A-Z]{2}|\*)$/, "ISO code or *"), state: z.string().trim().max(60).optional().default(""),
+  feeNgn: z.coerce.number().int().min(0), feeUsd: z.coerce.number().int().min(0), freeOverNgn: optMoney, freeOverUsd: optMoney,
+  eta: z.string().trim().min(2).max(60), position: z.coerce.number().int().min(0).max(999),
+});
+
+export async function saveZone(input: z.input<typeof ZoneInput>): Promise<Result> {
+  await requireAdmin();
+  const parsed = ZoneInput.safeParse(input);
+  if (!parsed.success) return fail(parsed.error);
+  const { id, ...z0 } = parsed.data;
+  const values = { ...z0, state: z0.state || null };
+  if (id) await db.update(s.shippingZones).set(values).where(eq(s.shippingZones.id, id));
+  else await db.insert(s.shippingZones).values(values);
+  return done();
+}
+
+export async function deleteZone(id: string): Promise<Result> {
+  await requireAdmin();
+  if (!uuid.safeParse(id).success) return { ok: false, error: "Invalid zone." };
+  const zones = await db.select({ id: s.shippingZones.id, country: s.shippingZones.country }).from(s.shippingZones);
+  const target = zones.find((z0) => z0.id === id);
+  if (target?.country === "*" && zones.filter((z0) => z0.country === "*").length === 1) return { ok: false, error: "Keep at least one rest-of-world (*) zone." };
+  await db.delete(s.shippingZones).where(eq(s.shippingZones.id, id));
+  return done();
+}
+
+class AdminError extends Error {}
+
+export async function suggestSlug(name: string) {
+  await requireAdmin();
+  return slugify(String(name).slice(0, 80));
+}
