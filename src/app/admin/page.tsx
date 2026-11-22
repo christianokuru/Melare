@@ -38,27 +38,44 @@ export default async function AdminHome() {
         {stat("Orders to ship", toShip[0].n, "/admin/orders?status=paid")}
         {stat("Customers", customers[0].n, "/admin/customers")}
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <a href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener noreferrer" className={adminGhost}>Visitors & sales · Google Analytics ↗</a>
-        <a href={process.env.NEXT_PUBLIC_CLARITY_ID ? `https://clarity.microsoft.com/projects/view/${encodeURIComponent(process.env.NEXT_PUBLIC_CLARITY_ID)}/dashboard` : "https://clarity.microsoft.com/"} target="_blank" rel="noopener noreferrer" className={adminGhost}>Recordings & heatmaps · Clarity ↗</a>
-      </div>
       {pendingReviews[0].n > 0 && <Link href="/admin/reviews" className="mt-4 block rounded-2xl bg-[#f6ead2] p-4 text-sm">{pendingReviews[0].n} review(s) waiting for approval →</Link>}
-      <h2 className="mt-10 mb-3 font-heading text-2xl">Recent orders</h2>
-      <Table head={["Order", "Customer", "Status", "Total", "Date"]}>
-        {recent.map((o) => (
-          <tr key={o.id}>
-            <td className={td}><Link href={`/admin/orders/${o.id}`} className="underline underline-offset-4">{o.number}</Link></td>
-            <td className={td}>{o.email}</td><td className={td}><StatusBadge status={o.status} /></td>
-            <td className={td}>{formatMoney(o.total, o.currency as Currency)}</td><td className={td}>{o.createdAt.toLocaleString("en-GB")}</td>
-          </tr>
-        ))}
-      </Table>
-      <h2 className="mt-10 mb-3 font-heading text-2xl">Low stock</h2>
-      {lowStock.length ? (
-        <Table head={["Product", "SKU", "Stock"]}>
-          {lowStock.map((v) => <tr key={v.id}><td className={td}><Link href={`/admin/products/${v.productId}`} className="underline underline-offset-4">{v.name} · {v.label}</Link></td><td className={td}>{v.sku}</td><td className={`${td} ${v.stock === 0 ? "text-destructive" : ""}`}>{v.stock}</td></tr>)}
-        </Table>
-      ) : <p className="text-sm text-muted-foreground">All products are well stocked.</p>}
+      {/* Full width on big screens: orders on the left, stock + insights on the right. */}
+      <div className="mt-8 grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+        <section className="min-w-0">
+          <div className="mb-3 flex items-baseline justify-between"><h2 className="font-heading text-2xl">Recent orders</h2><Link href="/admin/orders" className="text-xs underline underline-offset-4">View all</Link></div>
+          <Table head={["Order", "Customer", "Status", "Total", "Date"]}>
+            {recent.map((o) => (
+              <tr key={o.id}>
+                <td className={td}><Link href={`/admin/orders/${o.id}`} className="underline underline-offset-4">{o.number}</Link></td>
+                <td className={td}>{o.email}</td><td className={td}><StatusBadge status={o.status} /></td>
+                <td className={td}>{formatMoney(o.total, o.currency as Currency)}</td><td className={td}>{o.createdAt.toLocaleString("en-GB")}</td>
+              </tr>
+            ))}
+          </Table>
+        </section>
+        <div className="grid gap-6">
+          <section className="rounded-2xl border bg-white p-5">
+            <h2 className="mb-2 font-heading text-2xl">Low stock</h2>
+            {lowStock.length ? (
+              <ul className="divide-y text-sm">
+                {lowStock.map((v) => (
+                  <li key={v.id} className="flex justify-between gap-3 py-2.5">
+                    <Link href={`/admin/products/${v.productId}`} className="hover:underline">{v.name} <span className="text-muted-foreground">· {v.label}</span></Link>
+                    <span className="shrink-0 text-destructive">{v.stock ? `${v.stock} left` : "Sold out"}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="text-sm text-muted-foreground">All products are well stocked.</p>}
+          </section>
+          <section className="rounded-2xl border bg-white p-5">
+            <h2 className="mb-3 font-heading text-2xl">Insights</h2>
+            <div className="grid gap-2">
+              <a href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener noreferrer" className={adminGhost}>Visitors & sales · Google Analytics ↗</a>
+              <a href={process.env.NEXT_PUBLIC_CLARITY_ID ? `https://clarity.microsoft.com/projects/view/${encodeURIComponent(process.env.NEXT_PUBLIC_CLARITY_ID)}/dashboard` : "https://clarity.microsoft.com/"} target="_blank" rel="noopener noreferrer" className={adminGhost}>Recordings & heatmaps · Clarity ↗</a>
+            </div>
+          </section>
+        </div>
+      </div>
     </>
   );
 }

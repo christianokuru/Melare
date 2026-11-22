@@ -13,7 +13,7 @@ export default async function AdminProduct({ params }: PageProps<"/admin/product
   await requireAdmin();
   const { id } = await params;
   const categories = await db.select({ id: s.categories.id, name: s.categories.name }).from(s.categories).orderBy(asc(s.categories.position));
-  if (id === "new") return <><Back /><ProductForm categories={categories} /></>;
+  if (id === "new") return <div className="max-w-5xl"><Back /><ProductForm categories={categories} /></div>;
   if (!z.string().uuid().safeParse(id).success) notFound();
   const [p] = await db.select().from(s.products).where(eq(s.products.id, id));
   if (!p) notFound();
@@ -21,7 +21,7 @@ export default async function AdminProduct({ params }: PageProps<"/admin/product
     db.select().from(s.productVariants).where(eq(s.productVariants.productId, id)).orderBy(asc(s.productVariants.position)),
     db.select().from(s.productImages).where(eq(s.productImages.productId, id)).orderBy(asc(s.productImages.position)),
   ]);
-  return <><Back /><ProductForm categories={categories} product={{ ...p, variants, images }} /></>;
+  return <div className="max-w-5xl"><Back /><ProductForm categories={categories} product={{ ...p, variants, images }} /></div>;
 }
 
 const Back = () => <Link href="/admin/products" className="eyebrow mb-4 inline-block underline underline-offset-4">← Products</Link>;
