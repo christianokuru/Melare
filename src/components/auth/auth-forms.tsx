@@ -26,6 +26,12 @@ const LEVELS = [
   { label: "Strong", bar: "bg-emerald-700" },
 ];
 
+// Mirrors the server rule (Better Auth minPasswordLength 8, maxPasswordLength 128).
+const TOO_SHORT = "Password too weak: it must be at least 8 characters.";
+const TOO_LONG = "Password too long: use 128 characters or fewer.";
+const passwordProblem = (pw: string) => (pw.length < 8 ? TOO_SHORT : pw.length > 128 ? TOO_LONG : "");
+const SERVER_PASSWORD_ERRORS: Record<string, string> = { PASSWORD_TOO_SHORT: TOO_SHORT, PASSWORD_TOO_LONG: TOO_LONG };
+
 /** 0 = under 8 chars, else 1–4 from rules met (+1 for 12+ characters). */
 function strength(pw: string) {
   if (pw.length < 8) return 0;
@@ -33,7 +39,7 @@ function strength(pw: string) {
   return Math.min(4, Math.max(1, met - 1));
 }
 
-function PasswordField({ id, label, meter, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { id: string; label: string; meter?: boolean }) {
+function PasswordField({ id, label, meter, error, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { id: string; label: string; meter?: boolean; error?: string }) {
   const [show, setShow] = useState(false);
   const [value, setValue] = useState("");
   const score = strength(value);
@@ -43,12 +49,13 @@ function PasswordField({ id, label, meter, ...props }: React.InputHTMLAttributes
       <label htmlFor={id} className={labelClass}>{label}</label>
       <div className="relative">
         <input id={id} name={id} type={show ? "text" : "password"} value={value} onChange={(e) => setValue(e.target.value)}
-          className={`${inputClass} pr-12`} aria-describedby={meter ? `${id}-strength` : undefined} {...props} />
+          className={`${inputClass} pr-12`} aria-invalid={!!error} aria-describedby={[error && `${id}-error`, meter && `${id}-strength`].filter(Boolean).join(" ") || undefined} {...props} />
         <button type="button" onClick={() => setShow(!show)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show}
           className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-muted-foreground transition-colors hover:text-foreground">
           {show ? <EyeOffIcon /> : <EyeIcon />}
         </button>
       </div>
+      {error && <p id={`${id}-error`} role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
       {meter && value && (
         <div id={`${id}-strength`} className="mt-3">
           <div className="flex items-center gap-3">
@@ -118,6 +125,7 @@ export function SignUpForm() {
   const next = safeNext(useSearchParams().get("next"));
   const [error, setError] = useState("");
   const [sent, setSent] = useState("");
+  const [pwError, setPwError] = useState("");
   const [pending, start] = useTransition();
   if (sent) return <Notice tone="ok">Almost there! We’ve sent a confirmation link to <strong>{sent}</strong>. Open it to activate your account.</Notice>;
   return (
@@ -127,10 +135,12 @@ export function SignUpForm() {
       const email = String(f.get("email")).trim().toLowerCase();
       const password = String(f.get("password"));
       setError("");
-      if (password.length < 8) return setError("Use at least 8 characters for your password.");
+      setPwError(passwordProblem(password));
+      if (passwordProblem(password)) return;
       start(async () => {
         const { error } = await authClient.signUp.email({ name: String(f.get("name")).trim().slice(0, 80), email, password, callbackURL: next });
         if (!error) return setSent(email);
+        if (error.code && SERVER_PASSWORD_ERRORS[error.code]) return setPwError(SERVER_PASSWORD_ERRORS[error.code]);
         setError(error.status === 429 ? "Too many attempts. Please try again later." : error.message ?? "We couldn’t create your account. Please try again.");
       });
     }}>
@@ -138,7 +148,7 @@ export function SignUpForm() {
       {error && <Notice tone="error">{error}</Notice>}
       <Field id="name" label="Full name" autoComplete="name" required minLength={2} maxLength={80} />
       <Field id="email" label="Email" type="email" autoComplete="email" required />
-      <PasswordField id="password" label="Password" autoComplete="new-password" required minLength={8} maxLength={128} meter />
+      <PasswordField id="password" label="Password" autoComplete="new-password" required meter error={pwError} />
       <button type="submit" disabled={pending} className={buttonPrimary}>{pending ? "Creating account…" : "Create account"}</button>
       <p className="text-center text-xs text-muted-foreground">By creating an account you agree to our <Link href="/terms" className="underline">Terms</Link> and <Link href="/privacy" className="underline">Privacy policy</Link>.</p>
       <p className="text-center text-sm text-muted-foreground">Already have an account? <Link href={`/sign-in?next=${encodeURIComponent(next)}`} className="text-foreground underline underline-offset-4">Sign in</Link></p>
@@ -175,17 +185,18 @@ export function ResetPasswordForm() {
       e.preventDefault();
       const f = new FormData(e.currentTarget);
       const a = String(f.get("password")), b = String(f.get("confirm"));
-      if (a.length < 8) return setError("Use at least 8 characters.");
+      setError("");
+      if (passwordProblem(a)) return setError(passwordProblem(a));
       if (a !== b) return setError("Passwords don’t match.");
       start(async () => {
         const { error } = await authClient.resetPassword({ newPassword: a, token });
-        if (error) setError("This reset link is invalid or has expired.");
+        if (error) setError((error.code && SERVER_PASSWORD_ERRORS[error.code]) || "This reset link is invalid or has expired.");
         else router.push("/sign-in?reset=1");
       });
     }}>
       {error && <Notice tone="error">{error}</Notice>}
-      <PasswordField id="password" label="New password" autoComplete="new-password" required minLength={8} maxLength={128} meter />
-      <PasswordField id="confirm" label="Confirm new password" autoComplete="new-password" required minLength={8} maxLength={128} />
+      <PasswordField id="password" label="New password" autoComplete="new-password" required meter />
+      <PasswordField id="confirm" label="Confirm new password" autoComplete="new-password" required />
       <button type="submit" disabled={pending} className={buttonPrimary}>{pending ? "Saving…" : "Set new password"}</button>
     </form>
   );
