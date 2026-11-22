@@ -18,9 +18,19 @@ export async function BagLink() {
 
 export async function AccountLink() {
   const session = await getSession();
-  const href = !session ? "/sign-in" : isAdmin(session.user) ? "/admin" : "/account";
-  return <Link href={href} aria-label={session ? "Your account" : "Sign in"} className="flex size-11 items-center justify-center"><UserIcon /></Link>;
+  if (!session) return <Link href="/sign-in" aria-label="Sign in" className="flex size-11 items-center justify-center"><UserIcon /></Link>;
+  if (isAdmin(session.user)) {
+    return <Link href="/admin" aria-label="Admin dashboard" className="flex h-11 items-center px-1"><span className="eyebrow rounded-full bg-foreground px-2.5 py-1 text-[10px] text-background">Admin</span></Link>;
+  }
+  return (
+    <Link href="/account" aria-label="Your account" className="flex size-11 items-center justify-center">
+      <span className="flex size-8 items-center justify-center rounded-full border border-gold/50 bg-blush text-[11px] font-medium uppercase tracking-wide">{initials(session.user.name || session.user.email)}</span>
+    </Link>
+  );
 }
+
+/** "Ada Obi" → "AO", "ada" → "A". */
+const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
 export async function HeaderCurrency({ className }: { className?: string }) {
   return <CurrencySwitch value={await getCurrency()} className={className} />;
