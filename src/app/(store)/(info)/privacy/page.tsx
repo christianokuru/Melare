@@ -10,7 +10,7 @@ export default function PrivacyPage() {
       <ul>
         <li>Account details: name, email, phone and saved addresses.</li>
         <li>Order details: items, delivery address and payment status. Card details are handled entirely by Flutterwave and never reach our servers.</li>
-        <li>Technical data: cookies needed for your bag, sign-in and currency preference, and, if enabled, privacy-friendly analytics.</li>
+        <li>Technical data: essential cookies for your bag, sign-in and currency preference. With your consent only, analytics cookies from Google Analytics (pages visited, device, approximate location, traffic source), Microsoft Clarity (anonymised session replays and heatmaps; form inputs are masked) and Meta Pixel (ad measurement). You can change your choice any time via “Cookie settings” in the footer.</li>
       </ul>
       <h2>How we use it</h2>
       <ul>
@@ -20,7 +20,7 @@ export default function PrivacyPage() {
         <li>To protect our store against fraud and abuse.</li>
       </ul>
       <h2>Sharing</h2>
-      <p>We share data only with providers that help us operate: payment processing (Flutterwave), delivery partners, email delivery and hosting. We never sell your data.</p>
+      <p>We share data only with providers that help us operate: payment processing (Flutterwave), delivery partners, email delivery, hosting and, if you consent, analytics (Google, Microsoft, Meta). We never sell your data.</p>
       <h2>Your rights</h2>
       <p>Under the Nigeria Data Protection Act and similar laws, you can request access to, correction of, or deletion of your personal data. Contact us to make a request.</p>
     </InfoPage>

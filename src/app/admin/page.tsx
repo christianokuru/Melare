@@ -3,7 +3,7 @@ import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { formatMoney, type Currency } from "@/lib/money";
-import { PageTitle, Table, td } from "@/components/admin/ui";
+import { PageTitle, Table, td, adminGhost } from "@/components/admin/ui";
 import { StatusBadge } from "@/components/order/order-view";
 
 const PAID = ["paid", "processing", "shipped", "delivered"] as const;
@@ -34,6 +34,10 @@ export default async function AdminHome() {
         {stat("Revenue 30d · USD", formatMoney(rev("USD")?.total ?? 0, "USD"))}
         {stat("Orders to ship", toShip[0].n, "/admin/orders?status=paid")}
         {stat("Customers", customers[0].n, "/admin/customers")}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <a href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener noreferrer" className={adminGhost}>Visitors & sales · Google Analytics ↗</a>
+        <a href={process.env.NEXT_PUBLIC_CLARITY_ID ? `https://clarity.microsoft.com/projects/view/${encodeURIComponent(process.env.NEXT_PUBLIC_CLARITY_ID)}/dashboard` : "https://clarity.microsoft.com/"} target="_blank" rel="noopener noreferrer" className={adminGhost}>Recordings & heatmaps · Clarity ↗</a>
       </div>
       {pendingReviews[0].n > 0 && <Link href="/admin/reviews" className="mt-4 block rounded-2xl bg-[#f6ead2] p-4 text-sm">{pendingReviews[0].n} review(s) waiting for approval →</Link>}
       <h2 className="mt-10 mb-3 font-heading text-2xl">Recent orders</h2>

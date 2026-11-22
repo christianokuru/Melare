@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { CONCERNS, SITE, whatsappLink } from "@/lib/constants";
 import { NewsletterForm } from "./newsletter-form";
+import { CookieSettingsLink } from "@/components/cookie-banner";
 import { ChatIcon, GlobeIcon, ShieldIcon, TruckIcon } from "./icons";
 
 const COLUMNS = [
@@ -49,7 +50,11 @@ export function Footer() {
         </div>
         <div className="mx-auto mt-12 flex max-w-[1440px] flex-wrap justify-between gap-3 border-t border-foreground/15 pt-5 text-xs text-muted-foreground">
           <span>© Melaré. All rights reserved.</span>
-          <span>Payments secured by Flutterwave</span>
+          <span className="flex flex-wrap gap-x-4 gap-y-1">
+            <span>Payments secured by Flutterwave</span>
+            <CookieSettingsLink className="underline-offset-4 hover:underline" />
+          </span>
+          <span className="w-full text-center lg:w-auto">Made with love by <a href="https://kylva.com" target="_blank" rel="noopener" className="text-foreground underline underline-offset-4">Kylva</a></span>
         </div>
       </div>
     </footer>

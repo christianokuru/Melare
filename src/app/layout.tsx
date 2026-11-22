@@ -3,6 +3,7 @@ import { Jost, Cormorant_Garamond } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ClientShell } from "@/components/providers/client-shell";
 import { Analytics } from "@/components/analytics";
+import { CookieBanner } from "@/components/cookie-banner";
 import { JsonLd } from "@/components/json-ld";
 import { SITE } from "@/lib/constants";
 import "./globals.css";
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ClientShell>{children}</ClientShell>
         <Toaster position="top-center" />
         <Analytics />
+        <CookieBanner />
         <JsonLd data={{
           "@context": "https://schema.org",
           "@graph": [
