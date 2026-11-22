@@ -61,7 +61,7 @@ async function Bundle({ params }: { params: PageProps<"/bundles/[slug]">["params
         </div>
       </div>
       <JsonLd data={{
-        "@context": "https://schema.org", "@type": "Product", name: b.name, description: b.description, image: `${SITE.url}${b.image}`, brand: { "@type": "Brand", name: SITE.name },
+        "@context": "https://schema.org", "@type": "Product", name: b.name, description: b.description, image: b.image, brand: { "@type": "Brand", name: SITE.name },
         offers: [
           { "@type": "Offer", price: (b.priceNgn / 100).toFixed(2), priceCurrency: "NGN", availability: b.available ? "https://schema.org/InStock" : "https://schema.org/OutOfStock", url: `${SITE.url}/bundles/${b.slug}` },
           { "@type": "Offer", price: (b.priceUsd / 100).toFixed(2), priceCurrency: "USD", availability: b.available ? "https://schema.org/InStock" : "https://schema.org/OutOfStock", url: `${SITE.url}/bundles/${b.slug}` },

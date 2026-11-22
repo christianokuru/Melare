@@ -136,7 +136,7 @@ async function Product({ params }: { params: PageProps<"/products/[slug]">["para
         "@graph": [
           {
             "@type": "Product", name: p.name, description: p.description, sku: p.variants[0]?.sku, brand: { "@type": "Brand", name: SITE.name },
-            image: p.images.map((i) => `${SITE.url}${i.src}`), url: `${SITE.url}${path}`, category: p.category?.name,
+            image: p.images.map((i) => i.src), url: `${SITE.url}${path}`, category: p.category?.name,
             offers: p.variants.flatMap((v) => [
               { "@type": "Offer", sku: v.sku, price: (v.priceNgn / 100).toFixed(2), priceCurrency: "NGN", availability: v.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock", url: `${SITE.url}${path}`, itemCondition: "https://schema.org/NewCondition" },
               { "@type": "Offer", sku: v.sku, price: (v.priceUsd / 100).toFixed(2), priceCurrency: "USD", availability: v.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock", url: `${SITE.url}${path}`, itemCondition: "https://schema.org/NewCondition" },

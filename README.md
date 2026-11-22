@@ -10,6 +10,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the data model, security model and 
 npm install
 cp .env.example .env.local   # fill in values
 npm run db:push              # create tables
+npx tsx scripts/migrate-images.ts  # one-off: only if starting from the original repo images
 npm run db:seed              # catalogue, bundles, shipping zones, WELCOME10
 npm run dev
 ```
@@ -19,7 +20,7 @@ npm run dev
 | Command | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm test` | Integration tests (stock reservation, payment settlement, coupons/referrals) against `DATABASE_URL` |
+| `npm test` | Integration tests (stock reservation, payment settlement, coupons/referrals, image storage) against your Neon project |
 | `npm run lint` / `typecheck` | ESLint / TypeScript |
 | `npm run db:push` / `db:seed` | Drizzle schema push / seed |
 
@@ -30,6 +31,6 @@ npm run dev
 3. Flutterwave: add the webhook URL `https://your-domain.com/api/webhooks/flutterwave` and the same secret hash as `FLW_WEBHOOK_HASH`.
 4. Resend: verify your sending domain, set `EMAIL_FROM`.
 5. Google Search Console: submit `https://your-domain.com/sitemap.xml`.
-6. Product photos: add WebP files (~1200px, <200 KB) to `public/images/`, push, then reference `/images/<file>.webp` in Admin → Products.
+6. Product photos: upload them in Admin → Products (JPG/PNG/WebP/AVIF ≤4 MB). They're stored in Neon Object Storage, resized and converted to WebP automatically.
 
-Photos in `public/images` are from Unsplash (Unsplash License).
+The starter photos (bucket folder `site/`) are from Unsplash (Unsplash License).

@@ -6,6 +6,7 @@ import * as s from "../src/db/schema";
 
 config({ path: ".env.local" });
 const db = drizzle(new Pool({ connectionString: process.env.DATABASE_URL }), { schema: s });
+const img = (name: string) => `${process.env.NEXT_PUBLIC_MEDIA_URL!.replace(/\/$/, "")}/site/${name}.webp`; // uploaded by scripts/migrate-images.ts
 const N = (naira: number) => naira * 100;
 const D = (usd: number) => usd * 100;
 
@@ -14,10 +15,10 @@ async function main() {
   if (existing.length) return console.log("Catalogue already seeded");
 
   const cats = await db.insert(s.categories).values([
-    { slug: "cleansers", name: "Cleansers", position: 1, image: "/images/pump-bottle.webp", description: "Gentle cleansers that melt away sunscreen, makeup and the day without stripping melanin-rich skin." },
-    { slug: "serums", name: "Serums & Oils", position: 2, image: "/images/serum-amber.webp", description: "Concentrated treatments that fade dark spots, even tone and restore your natural glow." },
-    { slug: "moisturisers", name: "Moisturisers", position: 3, image: "/images/cream-jar.webp", description: "Barrier-loving creams for lasting hydration, day and night, in Lagos humidity or harmattan." },
-    { slug: "sun-care", name: "Sun Care", position: 4, image: "/images/fluid-white.webp", description: "Invisible, no-white-cast SPF made for deep skin tones. The most important step for preventing dark spots." },
+    { slug: "cleansers", name: "Cleansers", position: 1, image: img("pump-bottle"), description: "Gentle cleansers that melt away sunscreen, makeup and the day without stripping melanin-rich skin." },
+    { slug: "serums", name: "Serums & Oils", position: 2, image: img("serum-amber"), description: "Concentrated treatments that fade dark spots, even tone and restore your natural glow." },
+    { slug: "moisturisers", name: "Moisturisers", position: 3, image: img("cream-jar"), description: "Barrier-loving creams for lasting hydration, day and night, in Lagos humidity or harmattan." },
+    { slug: "sun-care", name: "Sun Care", position: 4, image: img("fluid-white"), description: "Invisible, no-white-cast SPF made for deep skin tones. The most important step for preventing dark spots." },
   ]).returning();
   const cat = (slug: string) => cats.find((c) => c.slug === slug)!.id;
 
@@ -30,7 +31,7 @@ async function main() {
       ingredients: "Aqua, Glycerin, Avena Sativa (Oat) Kernel Extract, Coco-Glucoside, Squalane, Panthenol, Allantoin, Cetearyl Alcohol, Sodium PCA, Citric Acid, Phenoxyethanol, Ethylhexylglycerin.",
       howToUse: "Morning and night, massage one pump onto damp skin for 60 seconds. Rinse with lukewarm water and pat dry.",
       skinTypes: ["Oily", "Dry", "Combination", "Normal", "Sensitive"], concerns: ["sensitivity", "dryness", "breakouts"],
-      images: [["/images/pump-bottle.webp", "Cloud Milk Cleanser pump bottle on soft fabric"], ["/images/lotion-pink.webp", "Milky cleanser texture flowing over a hand"]],
+      images: [[img("pump-bottle"), "Cloud Milk Cleanser pump bottle on soft fabric"], [img("lotion-pink"), "Milky cleanser texture flowing over a hand"]],
       variants: [{ sku: "MLR-CMC-150", label: "150ml", priceNgn: N(16000), priceUsd: D(18), stock: 40 }, { sku: "MLR-CMC-300", label: "300ml", priceNgn: N(27000), priceUsd: D(30), stock: 25 }],
     },
     {
@@ -41,7 +42,7 @@ async function main() {
       ingredients: "Aqua, Niacinamide (10%), Tranexamic Acid (3%), Glycyrrhiza Glabra (Licorice) Root Extract, Sodium Hyaluronate, Panthenol, Zinc PCA, Pentylene Glycol, Xanthan Gum, Phenoxyethanol.",
       howToUse: "Apply 3–4 drops to clean skin morning and night, before moisturiser. Always follow with SPF in the morning.",
       skinTypes: ["Oily", "Combination", "Normal", "Dry"], concerns: ["dark-spots", "uneven-tone", "dullness"],
-      images: [["/images/serum-amber.webp", "Rare Glow Serum amber dropper bottle on a stone plinth"], ["/images/drops-peach.webp", "Golden serum drops on a soft peach background"]],
+      images: [[img("serum-amber"), "Rare Glow Serum amber dropper bottle on a stone plinth"], [img("drops-peach"), "Golden serum drops on a soft peach background"]],
       variants: [{ sku: "MLR-RGS-30", label: "30ml", priceNgn: N(28500), priceUsd: D(32), stock: 40 }],
     },
     {
@@ -52,7 +53,7 @@ async function main() {
       ingredients: "Sclerocarya Birrea (Marula) Seed Oil, Adansonia Digitata (Baobab) Seed Oil, Rosa Canina (Rosehip) Fruit Oil, Squalane, Tocopherol, Bisabolol.",
       howToUse: "Warm 2–3 drops between your palms and press onto skin as the last step of your evening routine, or mix with moisturiser.",
       skinTypes: ["Dry", "Normal", "Combination"], concerns: ["dryness", "dullness"],
-      images: [["/images/serum-gold.webp", "Gold Drop Facial Oil glass dropper bottle with gold cap"], ["/images/oil-hands.webp", "Facial oil being applied from a glass dropper"]],
+      images: [[img("serum-gold"), "Gold Drop Facial Oil glass dropper bottle with gold cap"], [img("oil-hands"), "Facial oil being applied from a glass dropper"]],
       variants: [{ sku: "MLR-GDO-30", label: "30ml", priceNgn: N(26000), priceUsd: D(29), stock: 3 }],
     },
     {
@@ -63,7 +64,7 @@ async function main() {
       ingredients: "Aqua, Butyrospermum Parkii (Shea) Butter, Glycerin, Ceramide NP, Ceramide AP, Ceramide EOP, Cholesterol, Colloidal Oatmeal, Squalane, Niacinamide, Cetearyl Alcohol, Phenoxyethanol.",
       howToUse: "Smooth a pea-sized amount over face and neck morning and night after serum.",
       skinTypes: ["Dry", "Normal", "Sensitive", "Combination"], concerns: ["dryness", "sensitivity"],
-      images: [["/images/cream-jar.webp", "Velvet Barrier Cream jar floating above a stone"], ["/images/cream-swatch.webp", "Rich cream texture swatch"]],
+      images: [[img("cream-jar"), "Velvet Barrier Cream jar floating above a stone"], [img("cream-swatch"), "Rich cream texture swatch"]],
       variants: [{ sku: "MLR-VBC-50", label: "50ml", priceNgn: N(24000), priceUsd: D(27), stock: 40 }],
     },
     {
@@ -74,7 +75,7 @@ async function main() {
       ingredients: "Aqua, Squalane, Glycerin, Lactic Acid (5%), Bakuchiol (1%), Palmitoyl Tripeptide-1, Palmitoyl Tetrapeptide-7, Sodium Hyaluronate, Cetearyl Olivate, Sorbitan Olivate, Phenoxyethanol.",
       howToUse: "Apply a thin layer at night after serum, 3–4 nights a week to start. Use SPF daily.",
       skinTypes: ["Normal", "Combination", "Oily", "Dry"], concerns: ["uneven-tone", "dark-spots", "breakouts"],
-      images: [["/images/cream-jar-dark.webp", "Midnight Renewal Cream open jar on dark stone"], ["/images/apply-cream.webp", "Woman applying night cream to her cheek"]],
+      images: [[img("cream-jar-dark"), "Midnight Renewal Cream open jar on dark stone"], [img("apply-cream"), "Woman applying night cream to her cheek"]],
       variants: [{ sku: "MLR-MRC-50", label: "50ml", priceNgn: N(30000), priceUsd: D(34), compareAtNgn: N(34000), compareAtUsd: D(38), stock: 30 }],
     },
     {
@@ -85,7 +86,7 @@ async function main() {
       ingredients: "Aqua, Homosalate, Ethylhexyl Salicylate, Bis-Ethylhexyloxyphenol Methoxyphenyl Triazine, Diethylamino Hydroxybenzoyl Hexyl Benzoate, Niacinamide, Glycerin, Tocopherol, Phenoxyethanol.",
       howToUse: "Apply two finger-lengths as the last step of your morning routine. Reapply every 2 hours in direct sun.",
       skinTypes: ["Oily", "Dry", "Combination", "Normal", "Sensitive"], concerns: ["dark-spots", "uneven-tone"],
-      images: [["/images/fluid-white.webp", "Sheer Glow SPF 50 white dropper bottle on marble"], ["/images/portrait-afro.webp", "Woman with glowing deep skin"]],
+      images: [[img("fluid-white"), "Sheer Glow SPF 50 white dropper bottle on marble"], [img("portrait-afro"), "Woman with glowing deep skin"]],
       variants: [{ sku: "MLR-SPF-50", label: "50ml", priceNgn: N(19500), priceUsd: D(22), stock: 40 }],
     },
   ];
@@ -99,10 +100,10 @@ async function main() {
   }
 
   const [glow, night] = await db.insert(s.bundles).values([
-    { slug: "the-glow-ritual", name: "The Glow Ritual", discountPercent: 15, image: "/images/flatlay-pink.webp",
+    { slug: "the-glow-ritual", name: "The Glow Ritual", discountPercent: 15, image: img("flatlay-pink"),
       tagline: "Cleanse, brighten, protect: your complete morning routine",
       description: "Everything you need for brighter, more even skin every morning: Cloud Milk Cleanser, Rare Glow Serum and Sheer Glow SPF 50. Together they fade dark spots and stop new ones from forming, for less than buying separately." },
-    { slug: "the-night-ritual", name: "The Night Ritual", discountPercent: 12, image: "/images/flatlay-marble.webp",
+    { slug: "the-night-ritual", name: "The Night Ritual", discountPercent: 12, image: img("flatlay-marble"),
       tagline: "Restore and renew while you sleep",
       description: "Cloud Milk Cleanser, Gold Drop Facial Oil and Midnight Renewal Cream: an evening routine that smooths texture, deeply nourishes and wakes you up glowing." },
   ]).returning();

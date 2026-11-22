@@ -4,9 +4,10 @@ import { toast } from "sonner";
 import { toastResult } from "@/lib/toast-result";
 import { deleteBundle, saveBundle } from "@/app/actions/admin";
 import { adminButton, adminGhost, adminInput, adminLabel } from "@/components/admin/ui";
+import { ImageUpload } from "@/components/admin/image-upload";
 
 type Bundle = { id?: string; slug: string; name: string; tagline: string; description: string; image: string; discountPercent: number; active: boolean; items: { variantId: string; quantity: number }[] };
-const EMPTY: Bundle = { slug: "", name: "", tagline: "", description: "", image: "/images/", discountPercent: 10, active: true, items: [] };
+const EMPTY: Bundle = { slug: "", name: "", tagline: "", description: "", image: "", discountPercent: 10, active: true, items: [] };
 
 export function BundleEditor({ bundles, variants }: { bundles: Bundle[]; variants: { id: string; label: string }[] }) {
   const [editing, setEditing] = useState<Bundle | null>(null);
@@ -20,7 +21,7 @@ export function BundleEditor({ bundles, variants }: { bundles: Bundle[]; variant
           <div><label className={adminLabel}>Slug</label><input value={editing.slug} onChange={(e) => set("slug", e.target.value)} required className={adminInput} /></div>
           <div className="sm:col-span-2"><label className={adminLabel}>Tagline</label><input value={editing.tagline} onChange={(e) => set("tagline", e.target.value)} required className={adminInput} /></div>
           <div className="sm:col-span-2"><label className={adminLabel}>Description</label><textarea value={editing.description} onChange={(e) => set("description", e.target.value)} rows={3} required className={`${adminInput} h-auto py-2`} /></div>
-          <div><label className={adminLabel}>Image path</label><input value={editing.image} onChange={(e) => set("image", e.target.value)} required className={adminInput} /></div>
+          <div><span className={adminLabel}>Image</span><ImageUpload folder="bundles" value={editing.image} onChange={(url) => set("image", url)} /></div>
           <div><label className={adminLabel}>Discount %</label><input type="number" min={1} max={50} value={editing.discountPercent} onChange={(e) => set("discountPercent", Number(e.target.value))} className={adminInput} /></div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editing.active} onChange={(e) => set("active", e.target.checked)} className="accent-foreground" /> Active</label>
         </div>

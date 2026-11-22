@@ -54,7 +54,7 @@ export default async function ArticlePage({ params }: PageProps<"/journal/[slug]
         <Suspense fallback={null}><Products slugs={a.products} /></Suspense>
       </section>
       <JsonLd data={{
-        "@context": "https://schema.org", "@type": "Article", headline: a.title, description: a.description, image: `${SITE.url}${a.image}`,
+        "@context": "https://schema.org", "@type": "Article", headline: a.title, description: a.description, image: a.image,
         datePublished: a.published, author: { "@type": "Organization", name: SITE.name }, publisher: { "@id": `${SITE.url}/#org` },
         mainEntityOfPage: `${SITE.url}/journal/${a.slug}`,
       }} />

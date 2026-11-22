@@ -9,12 +9,15 @@ import { releaseOrderStock } from "@/lib/checkout";
 import { sendEmail, escapeHtml, APP_URL } from "@/lib/email";
 import { CONCERNS, SKIN_TYPES } from "@/lib/constants";
 import { slugify } from "@/lib/utils";
+import { isMediaUrl, MEDIA_FOLDERS } from "@/lib/media";
+import { storeImage, UploadError } from "@/lib/storage";
+import { throttle } from "@/lib/throttle";
 
 type Result = { ok: true; id?: string } | { ok: false; error: string };
 const fail = (e: z.ZodError): Result => ({ ok: false, error: e.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`)[0] });
 const uuid = z.string().uuid();
 const slug = z.string().trim().min(2).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes");
-const imagePath = z.string().trim().regex(/^\/images\/[a-z0-9][a-z0-9/_-]*\.(webp|jpe?g|png|avif)$/i, "must be a /images/… file in the repo");
+const imagePath = z.string().trim().refine(isMediaUrl, "upload the image first");
 const money = z.coerce.number().int().min(1).max(1_000_000_000); // minor units
 const optMoney = z.union([money, z.literal(null)]).optional().default(null);
 
@@ -22,6 +25,22 @@ function done(id?: string): Result {
   updateTag(CATALOG_TAG);
   refresh();
   return { ok: true, id };
+}
+
+/* ───────────── Image uploads (Neon Object Storage) ───────────── */
+export async function uploadImage(form: FormData): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const session = await requireAdmin();
+  if (!(await throttle("upload", 60, 3600, session.user.id))) return { ok: false, error: "Too many uploads. Try again later." };
+  const file = form.get("file");
+  const folder = z.enum(MEDIA_FOLDERS).safeParse(form.get("folder"));
+  if (!(file instanceof File) || !folder.success) return { ok: false, error: "Choose an image to upload." };
+  try {
+    return { ok: true, url: await storeImage(Buffer.from(await file.arrayBuffer()), folder.data) };
+  } catch (e) {
+    if (e instanceof UploadError) return { ok: false, error: e.message };
+    console.error("[upload]", e);
+    return { ok: false, error: "Upload failed. Please try again." };
+  }
 }
 
 /* ───────────── Products ───────────── */

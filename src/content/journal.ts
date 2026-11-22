@@ -1,3 +1,4 @@
+import { media } from "@/lib/media";
 export type Article = {
   slug: string; title: string; description: string; image: string; imageAlt: string; tag: string;
   published: string; readMinutes: number; products: string[];
@@ -9,7 +10,7 @@ export const ARTICLES: Article[] = [
     slug: "how-to-fade-dark-spots-on-melanin-rich-skin",
     title: "How to fade dark spots on melanin-rich skin (gently)",
     description: "A dermatologist-informed guide to fading hyperpigmentation and post-acne marks on Black and brown skin, without bleaching or irritation.",
-    image: "/images/apply-cream.webp", imageAlt: "Woman with deep skin applying a cream to her cheek", tag: "Guide",
+    image: media("site/apply-cream.webp"), imageAlt: "Woman with deep skin applying a cream to her cheek", tag: "Guide",
     published: "2026-10-02", readMinutes: 6, products: ["rare-glow-serum", "sheer-glow-spf-50", "midnight-renewal-cream"],
     sections: [
       { paragraphs: [
@@ -39,7 +40,7 @@ export const ARTICLES: Article[] = [
     slug: "why-spf-matters-for-dark-skin",
     title: "Yes, dark skin needs sunscreen. Here’s why",
     description: "Melanin offers some natural protection, but not enough. Learn why daily SPF prevents dark spots, uneven tone and premature ageing on Black skin.",
-    image: "/images/hero.webp", imageAlt: "Woman with glowing deep skin in warm sunlight", tag: "Sun care",
+    image: media("site/hero.webp"), imageAlt: "Woman with glowing deep skin in warm sunlight", tag: "Sun care",
     published: "2026-09-14", readMinutes: 4, products: ["sheer-glow-spf-50", "rare-glow-serum"],
     sections: [
       { paragraphs: [
@@ -59,7 +60,7 @@ export const ARTICLES: Article[] = [
     slug: "simple-3-step-skincare-routine",
     title: "The simple 3-step routine for glowing skin",
     description: "You don’t need 10 steps. Build an effective morning and evening skincare routine for melanin-rich skin with just a cleanser, a treatment and protection.",
-    image: "/images/routine-towel.webp", imageAlt: "Smiling woman in a bathrobe applying skincare", tag: "Routine",
+    image: media("site/routine-towel.webp"), imageAlt: "Smiling woman in a bathrobe applying skincare", tag: "Routine",
     published: "2026-08-21", readMinutes: 5, products: ["cloud-milk-cleanser", "rare-glow-serum", "velvet-barrier-cream", "sheer-glow-spf-50"],
     sections: [
       { paragraphs: [

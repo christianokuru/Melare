@@ -1,5 +1,5 @@
 // Minimal service worker: cache-first for static assets, network-first for pages with offline fallback.
-const CACHE = "melare-v2";
+const CACHE = "melare-v3";
 const OFFLINE = "/offline";
 
 self.addEventListener("install", (e) => {
@@ -21,7 +21,7 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(fetch(request).catch(() => caches.match(OFFLINE)));
     return;
   }
-  if (/^\/(_next\/static|images)\//.test(url.pathname) || /\.(?:woff2|png|svg)$/.test(url.pathname)) {
+  if (/^\/_next\/static\//.test(url.pathname) || /\.(?:woff2|png|svg)$/.test(url.pathname)) {
     e.respondWith(
       caches.match(request).then((hit) =>
         hit || fetch(request).then((res) => {

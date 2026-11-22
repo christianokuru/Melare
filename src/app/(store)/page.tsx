@@ -8,6 +8,7 @@ import { ARTICLES } from "@/content/journal";
 import { ProductGrid, GridSkeleton } from "@/components/product/product-grid";
 import { Price } from "@/components/product/price";
 import { buttonOutline, buttonPrimary, container, SectionHeading } from "@/components/site/section";
+import { media } from "@/lib/media";
 
 export default function Home() {
   return (
@@ -15,7 +16,7 @@ export default function Home() {
       {/* Hero */}
       <section className="grid bg-petal lg:min-h-[calc(100svh-120px)] lg:grid-cols-2">
         <div className="relative order-1 h-[62svh] min-h-[420px] lg:order-2 lg:h-auto">
-          <Image src="/images/hero.webp" alt="Woman with radiant, even, melanin-rich skin in warm light" fill priority sizes="(min-width:1024px) 50vw, 100vw" className="object-cover object-[50%_30%]" />
+          <Image src={media("site/hero.webp")} alt="Woman with radiant, even, melanin-rich skin in warm light" fill priority sizes="(min-width:1024px) 50vw, 100vw" className="object-cover object-[50%_30%]" />
         </div>
         <div className="order-2 flex flex-col justify-center px-5 py-10 text-center lg:order-1 lg:px-[8vw] lg:text-left">
           <p className="eyebrow mb-4">Skincare for melanin-rich skin</p>
@@ -68,7 +69,7 @@ export default function Home() {
       {/* Quiz */}
       <section className="mt-16 grid bg-blush lg:mt-24 lg:grid-cols-2">
         <div className="relative h-[420px] lg:h-auto lg:min-h-[560px]">
-          <Image src="/images/portrait-afro.webp" alt="Woman with healthy, glowing skin" fill sizes="(min-width:1024px) 50vw, 100vw" className="object-cover object-top" />
+          <Image src={media("site/portrait-afro.webp")} alt="Woman with healthy, glowing skin" fill sizes="(min-width:1024px) 50vw, 100vw" className="object-cover object-top" />
         </div>
         <div className="flex flex-col items-center justify-center px-6 py-14 text-center lg:items-start lg:px-[7vw] lg:text-left">
           <p className="eyebrow mb-3 text-muted-foreground">2-minute skin quiz</p>

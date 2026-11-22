@@ -11,7 +11,7 @@ Mobile-first PWA skincare store. One Next.js 16 app on Vercel (UI + API), Neon P
 | DB | Neon Postgres + Drizzle ORM (`neon-serverless` WebSocket pool → real transactions and row locks) |
 | Payments | Flutterwave Standard (NGN: card/transfer/USSD; USD: card) |
 | Email | Resend REST (logs to console when no key) |
-| Images | `public/images/*.webp`, served by Vercel CDN via `next/image` |
+| Images | Neon Object Storage (`public_read` bucket `melare-media`), optimised and cached by `next/image` |
 | Jobs | Vercel Cron → `/api/cron/daily` |
 
 ## Folder structure
@@ -40,15 +40,17 @@ src/
     checkout.ts            coupon/referral validation, shipping zones, stock reserve/release, expiry
     payments.ts            Flutterwave link/verify, webhook check, settlePayment()
     throttle.ts            Postgres fixed-window rate limiter for server actions
+    storage.ts             Neon Object Storage: validate → strip metadata → resize → WebP → upload
+    media.ts               bucket URL helpers + strict URL validation
     email.ts money.ts constants.ts request.ts
   db/schema.ts db/index.ts
   content/journal.ts       SEO articles
-scripts/seed.ts  tests/payments.test.ts
+scripts/seed.ts  scripts/migrate-images.ts  tests/payments.test.ts  tests/storage.test.ts
 ```
 
 ## Data model
 - **Auth:** `user` (phone, referral_code), `session`, `account`, `verification`, `rate_limit`
-- **Catalogue:** `categories` → `products` (benefits, ingredients, skin_types[], concerns[], status, days_supply, SEO fields) → `product_variants` (sku, label, price_ngn, price_usd, compare_at_*, stock ≥ 0) + `product_images` (src in /public, alt)
+- **Catalogue:** `categories` → `products` (benefits, ingredients, skin_types[], concerns[], status, days_supply, SEO fields) → `product_variants` (sku, label, price_ngn, price_usd, compare_at_*, stock ≥ 0) + `product_images` (src = bucket URL, alt)
 - **Bundles:** `bundles` (discount 1–50%) + `bundle_items` (variant, qty). Price = component sum − discount.
 - **Customer:** `addresses` (≤10), `carts`/`cart_items` (variant XOR bundle, qty 1–10), `wishlist`, `reviews` (verified buyers, moderated), `subscribers`, `stock_alerts`, `quiz_results`
 - **Commerce:** `shipping_zones`, `coupons` (percent XOR fixed NGN+USD, min subtotal, max uses, expiry, personal `user_id`, influencer `owner_name`), `orders` (random `MLR-XXXXXXXX` number, address snapshot, `stock_reserved`, `expires_at`), `order_items` (price snapshot + reserved `stock` jsonb), `payments` (unique `reference`, unique `transaction_id`)
@@ -64,13 +66,19 @@ Money is always integer minor units (kobo/cents). DB check constraints enforce n
 - **Payments:** redirect query params are ignored; we verify server-to-server by **our** `tx_ref`. `settlePayment()` locks the payment and order rows and marks paid only if status = successful **and** currency and exact amount match the order. It's idempotent (repeat webhooks/redirects are no-ops) and handles late payments after expiry (re-reserves stock or flags for refund), duplicate payments (flags for refund) and mismatches (never paid, admin alerted). Webhook requires a constant-time `verif-hash` match.
 - **Auth:** email verification required (stops admin-email squatting), password 8–128, session revocation on reset/password change, DB-backed rate limits on sign-in/up/reset, open-redirect-safe `next` param.
 - **Abuse:** Postgres rate limits on cart, checkout, quotes/codes, order lookup, reviews, newsletter, quiz, stock alerts. Coupons once per email; referral codes first order only, never self.
-- **Inputs:** Zod on every action; LIKE wildcards escaped; JSON-LD `<` escaped; CSV export neutralises formula injection; image paths restricted to `/images/*.{webp,jpg,png,avif}`.
+- **Inputs:** Zod on every action; LIKE wildcards escaped; JSON-LD `<` escaped; CSV export neutralises formula injection; image URLs must point into our own bucket with a safe key.
+- **Uploads (admin only):** server action → `requireAdmin` + rate limit → bytes decoded with sharp (non-images rejected, ≥400px, ≤4 MB) → EXIF/GPS stripped → resized ≤1800px → WebP → random key in `products|categories|bundles/`. Browsers never get storage credentials.
 - **Headers:** CSP (frame-ancestors none, object-src none), HSTS (https), X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy; `poweredByHeader` off. Service worker never caches API/account/admin/checkout/cart.
 
 ## Reads vs writes
 - Catalogue reads: `"use cache"` + `cacheTag("catalog")` + `cacheLife("hours")`, part of the static shell. Admin mutations call `updateTag("catalog")`; paid webhooks `revalidateTag`.
 - Request-specific UI (currency, bag count, session) streams inside `<Suspense>`.
 - Writes: server actions only (built-in origin checks); route handlers only for Better Auth, the Flutterwave webhook, cron and the CSV export.
+
+## Images
+- Bucket `melare-media` (public_read) on the project's main branch; folders `site/` (design photos), `products/`, `categories/`, `bundles/`.
+- DB stores full URLs; `next/image` optimises them (AVIF/WebP, 30-day cache), so the bucket serves each image rarely.
+- Objects use unique keys with `Cache-Control: immutable`. Removing an image from a product doesn't delete the object (safe if reused); old uploads can be pruned from the Neon Console.
 
 ## Payment flow
 1. Shopper picks ₦/$ (cookie; defaults by `x-vercel-ip-country`).

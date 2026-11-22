@@ -7,6 +7,7 @@ import { archiveProduct, saveProduct } from "@/app/actions/admin";
 import { CONCERNS, SKIN_TYPES } from "@/lib/constants";
 import { slugify } from "@/lib/utils";
 import { adminButton, adminGhost, adminInput, adminLabel } from "@/components/admin/ui";
+import { ImageUpload } from "@/components/admin/image-upload";
 
 type V = { id?: string; sku: string; label: string; priceNgn: number; priceUsd: number; compareAtNgn: number | null; compareAtUsd: number | null; stock: number };
 type Img = { src: string; alt: string };
@@ -30,7 +31,7 @@ export function ProductForm({ categories, product }: { categories: { id: string;
       id: v.id, sku: v.sku, label: v.label, priceNgn: v.priceNgn ? toMajor(v.priceNgn) : "", priceUsd: v.priceUsd ? toMajor(v.priceUsd) : "",
       compareAtNgn: toMajor(v.compareAtNgn), compareAtUsd: toMajor(v.compareAtUsd), stock: String(v.stock),
     })));
-  const [images, setImages] = useState<Img[]>(product?.images.map(({ src, alt }) => ({ src, alt })) ?? [{ src: "/images/", alt: "" }]);
+  const [images, setImages] = useState<Img[]>(product?.images.map(({ src, alt }) => ({ src, alt })) ?? [{ src: "", alt: "" }]);
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
   return (
@@ -94,19 +95,17 @@ export function ProductForm({ categories, product }: { categories: { id: string;
 
       <section>
         <h2 className="mb-3 font-heading text-2xl">Images</h2>
-        <p className="mb-3 text-xs text-muted-foreground">Add the WebP file to <code>public/images/</code> in the repo, push, then enter its path (e.g. /images/serum.webp). First image is the main photo.</p>
+        <p className="mb-3 text-xs text-muted-foreground">JPG, PNG, WebP or AVIF up to 4 MB, at least 400px wide. Images are resized and converted to WebP automatically. The first image is the main photo.</p>
         <div className="grid gap-3">
           {images.map((im, i) => (
-            <div key={i} className="grid gap-2 rounded-xl border bg-white p-3 sm:grid-cols-[64px_1fr_1fr_auto] sm:items-end">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={im.src.startsWith("/images/") ? im.src : "/icon-192.png"} alt="" className="h-20 w-16 rounded-md object-cover" />
-              <div><label className={adminLabel} htmlFor={`i${i}-src`}>Path</label><input id={`i${i}-src`} value={im.src} onChange={(e) => setImages(images.map((x, j) => (j === i ? { ...x, src: e.target.value } : x)))} required className={adminInput} /></div>
+            <div key={i} className="grid gap-3 rounded-xl border bg-white p-3 sm:grid-cols-[auto_1fr_auto] sm:items-end">
+              <ImageUpload folder="products" value={im.src} onChange={(src) => setImages(images.map((x, j) => (j === i ? { ...x, src } : x)))} />
               <div><label className={adminLabel} htmlFor={`i${i}-alt`}>Alt text (describe the photo)</label><input id={`i${i}-alt`} value={im.alt} onChange={(e) => setImages(images.map((x, j) => (j === i ? { ...x, alt: e.target.value } : x)))} required className={adminInput} /></div>
               <button type="button" disabled={images.length === 1} onClick={() => setImages(images.filter((_, j) => j !== i))} className="pb-2 text-xs text-destructive underline disabled:opacity-30">Remove</button>
             </div>
           ))}
         </div>
-        {images.length < 8 && <button type="button" onClick={() => setImages([...images, { src: "/images/", alt: "" }])} className={`${adminGhost} mt-3`}>Add image</button>}
+        {images.length < 8 && <button type="button" onClick={() => setImages([...images, { src: "", alt: "" }])} className={`${adminGhost} mt-3`}>Add image</button>}
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2">

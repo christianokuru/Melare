@@ -1,9 +1,10 @@
 "use client";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { toastResult } from "@/lib/toast-result";
 import { deleteCategory, saveCategory } from "@/app/actions/admin";
 import { adminButton, adminInput, adminLabel } from "@/components/admin/ui";
+import { ImageUpload } from "@/components/admin/image-upload";
 
 type Cat = { id?: string; slug: string; name: string; description: string | null; image: string | null; position: number };
 
@@ -13,7 +14,7 @@ export function CategoryEditor({ categories }: { categories: Cat[] }) {
   return (
     <div className="grid gap-4">
       {rows.map((c) => (
-        <form key={c.id ?? "new"} className="grid gap-3 rounded-2xl border bg-white p-4 sm:grid-cols-6 sm:items-end" onSubmit={(e) => {
+        <form key={c.id ?? "new"} className="grid gap-3 rounded-2xl border bg-white p-4 sm:grid-cols-7 sm:items-end" onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
           start(async () => {
@@ -24,7 +25,7 @@ export function CategoryEditor({ categories }: { categories: Cat[] }) {
           <div><label className={adminLabel}>Name</label><input name="name" defaultValue={c.name} required className={adminInput} /></div>
           <div><label className={adminLabel}>Slug</label><input name="slug" defaultValue={c.slug} required className={adminInput} /></div>
           <div className="sm:col-span-2"><label className={adminLabel}>Description</label><input name="description" defaultValue={c.description ?? ""} className={adminInput} /></div>
-          <div><label className={adminLabel}>Image path</label><input name="image" defaultValue={c.image ?? ""} placeholder="/images/…" className={adminInput} /></div>
+          <div className="sm:col-span-2"><span className={adminLabel}>Image</span><CategoryImage initial={c.image ?? ""} /></div>
           <div className="flex items-end gap-2">
             <div className="w-16"><label className={adminLabel}>Order</label><input name="position" type="number" min={0} defaultValue={c.position} className={adminInput} /></div>
             <button type="submit" disabled={pending} className={adminButton}>{c.id ? "Save" : "Add"}</button>
@@ -34,4 +35,9 @@ export function CategoryEditor({ categories }: { categories: Cat[] }) {
       ))}
     </div>
   );
+}
+
+function CategoryImage({ initial }: { initial: string }) {
+  const [url, setUrl] = useState(initial);
+  return <ImageUpload folder="categories" name="image" value={url} onChange={setUrl} />;
 }

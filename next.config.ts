@@ -2,12 +2,13 @@ import type { NextConfig } from "next";
 
 const dev = process.env.NODE_ENV !== "production";
 const https = (process.env.NEXT_PUBLIC_APP_URL ?? "").startsWith("https://");
+const media = process.env.NEXT_PUBLIC_MEDIA_URL ? new URL(process.env.NEXT_PUBLIC_MEDIA_URL) : null; // Neon Object Storage bucket
 
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://www.googletagmanager.com https://connect.facebook.net https://www.clarity.ms https://*.clarity.ms`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com https://www.facebook.com https://*.clarity.ms https://c.bing.com",
+  `img-src 'self' data: blob:${media ? ` ${media.origin}` : ""} https://*.google-analytics.com https://*.googletagmanager.com https://www.facebook.com https://*.clarity.ms https://c.bing.com`,
   "font-src 'self'",
   "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://www.facebook.com https://*.clarity.ms https://c.bing.com",
   "frame-ancestors 'none'",
@@ -20,9 +21,13 @@ const csp = [
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
-  experimental: { useOffline: true },
+  experimental: { useOffline: true, serverActions: { bodySizeLimit: "5mb" } }, // image uploads (validated ≤4 MB server-side)
   poweredByHeader: false,
-  images: { formats: ["image/avif", "image/webp"], minimumCacheTTL: 60 * 60 * 24 * 30 },
+  images: {
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 60 * 60 * 24 * 30,
+    remotePatterns: media ? [{ protocol: "https", hostname: media.hostname, pathname: `${media.pathname}/**` }] : [],
+  },
   turbopack: {
     rules: { "*.css": { loaders: ["@tailwindcss/turbopack"], as: "*.css" } },
   },
@@ -46,7 +51,6 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
         ],
       },
-      { source: "/images/(.*)", headers: [{ key: "Cache-Control", value: "public, max-age=2592000, stale-while-revalidate=86400" }] },
     ];
   },
 };
