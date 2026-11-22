@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
-// Optimistic redirect only. Real auth/role checks happen in pages & route handlers.
+// Optimistic redirect for signed-out visitors. Real authorization happens on the server in every page and action.
 export function proxy(req: NextRequest) {
   if (!getSessionCookie(req)) {
     const url = new URL("/sign-in", req.url);
@@ -11,4 +11,4 @@ export function proxy(req: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/account/:path*", "/admin/:path*", "/checkout/:path*"] };
+export const config = { matcher: ["/account/:path*"] };

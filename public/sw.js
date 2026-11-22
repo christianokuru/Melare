@@ -1,5 +1,5 @@
 // Minimal service worker: cache-first for static assets, network-first for pages with offline fallback.
-const CACHE = "melare-v1";
+const CACHE = "melare-v2";
 const OFFLINE = "/offline";
 
 self.addEventListener("install", (e) => {
@@ -14,15 +14,18 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const { request } = e;
-  if (request.method !== "GET" || new URL(request.url).pathname.startsWith("/api/")) return;
+  const url = new URL(request.url);
+  // Never cache API, auth, account, admin or checkout responses.
+  if (request.method !== "GET" || url.origin !== location.origin || /^\/(api|account|admin|checkout|cart)/.test(url.pathname)) return;
   if (request.mode === "navigate") {
     e.respondWith(fetch(request).catch(() => caches.match(OFFLINE)));
     return;
   }
-  if (/\.(?:js|css|woff2|png|svg|webp|avif|jpg)$/.test(new URL(request.url).pathname)) {
+  if (/^\/(_next\/static|images)\//.test(url.pathname) || /\.(?:woff2|png|svg)$/.test(url.pathname)) {
     e.respondWith(
       caches.match(request).then((hit) =>
         hit || fetch(request).then((res) => {
+          if (!res.ok) return res;
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(request, copy));
           return res;
