@@ -65,7 +65,7 @@ export const categories = pgTable("categories", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(), // Cleansers, Serums, Moisturisers, SPF, Body…
   description: text("description"),
-  imageKey: text("image_key"), // R2 object key
+  image: text("image"), // path in /public, e.g. /categories/serums.webp
   position: integer("position").default(0).notNull(),
   ...timestamps,
 });
@@ -104,7 +104,7 @@ export const productVariants = pgTable("product_variants", {
 export const productImages = pgTable("product_images", {
   id: id(),
   productId: text("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
-  key: text("key").notNull(), // R2 object key, e.g. products/<id>/<uuid>.webp
+  src: text("src").notNull(), // path in /public, e.g. /products/glow-serum/1.webp
   alt: text("alt"),
   position: integer("position").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
