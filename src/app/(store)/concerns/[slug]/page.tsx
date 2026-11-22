@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CONCERNS } from "@/lib/constants";
-import { Listing } from "@/components/product/listing";
+import { Suspense } from "react";
+import { Listing, ListingSkeleton } from "@/components/product/listing";
 
 export function generateStaticParams() {
   return CONCERNS.map((c) => ({ slug: c.slug }));
@@ -19,7 +20,11 @@ export async function generateMetadata({ params }: PageProps<"/concerns/[slug]">
   };
 }
 
-export default async function ConcernPage({ params, searchParams }: PageProps<"/concerns/[slug]">) {
+export default function ConcernPage({ params, searchParams }: PageProps<"/concerns/[slug]">) {
+  return <Suspense fallback={<ListingSkeleton />}><Concern params={params} searchParams={searchParams} /></Suspense>;
+}
+
+async function Concern({ params, searchParams }: Pick<PageProps<"/concerns/[slug]">, "params" | "searchParams">) {
   const c = find((await params).slug);
   if (!c) notFound();
   return <Listing title={c.name} intro={c.blurb} base={`/concerns/${c.slug}`} fixed={{ concern: c.slug }} searchParams={searchParams}

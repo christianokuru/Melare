@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getCategories } from "@/lib/catalog";
-import { Listing } from "@/components/product/listing";
+import { Suspense } from "react";
+import { Listing, ListingSkeleton } from "@/components/product/listing";
 
 export async function generateStaticParams() {
   return (await getCategories()).map((c) => ({ category: c.slug }));
@@ -22,7 +23,11 @@ export async function generateMetadata({ params }: PageProps<"/shop/[category]">
   };
 }
 
-export default async function CategoryPage({ params, searchParams }: PageProps<"/shop/[category]">) {
+export default function CategoryPage({ params, searchParams }: PageProps<"/shop/[category]">) {
+  return <Suspense fallback={<ListingSkeleton />}><Category params={params} searchParams={searchParams} /></Suspense>;
+}
+
+async function Category({ params, searchParams }: Pick<PageProps<"/shop/[category]">, "params" | "searchParams">) {
   const c = await find((await params).category);
   if (!c) notFound();
   return <Listing title={c.name} intro={c.description ?? undefined} base={`/shop/${c.slug}`} fixed={{ category: c.slug }} searchParams={searchParams}

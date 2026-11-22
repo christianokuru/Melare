@@ -33,6 +33,17 @@ export function Listing({ title, intro, crumbs, base, fixed, searchParams }: {
   );
 }
 
+/** Fallback while URL params resolve (keeps listing pages on the instant static shell). */
+export function ListingSkeleton() {
+  return (
+    <div className={`${container} pt-6`} aria-hidden>
+      <div className="h-3 w-32 rounded bg-sand" />
+      <div className="mt-6 mb-8 h-12 w-64 rounded bg-sand" />
+      <GridSkeleton count={8} />
+    </div>
+  );
+}
+
 async function CategoryChips({ active }: { active?: string }) {
   const cats = await getCategories();
   const chip = (on: boolean) => cn("eyebrow shrink-0 rounded-full border px-4 py-2.5 transition-colors", on ? "border-foreground bg-foreground text-background" : "border-foreground/20 hover:border-foreground");

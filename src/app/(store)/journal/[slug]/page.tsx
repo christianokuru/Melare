@@ -24,7 +24,15 @@ export async function generateMetadata({ params }: PageProps<"/journal/[slug]">)
   };
 }
 
-export default async function ArticlePage({ params }: PageProps<"/journal/[slug]">) {
+export default function ArticlePage({ params }: PageProps<"/journal/[slug]">) {
+  return (
+    <Suspense fallback={<div className={`${container} pt-6`} aria-hidden><div className="mx-auto mt-16 h-14 max-w-2xl rounded bg-sand" /><div className="mx-auto mt-10 aspect-[16/10] max-w-5xl rounded-2xl bg-sand" /></div>}>
+      <Article params={params} />
+    </Suspense>
+  );
+}
+
+async function Article({ params }: Pick<PageProps<"/journal/[slug]">, "params">) {
   const a = getArticle((await params).slug);
   if (!a) notFound();
   return (
