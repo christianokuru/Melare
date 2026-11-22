@@ -4,11 +4,69 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { authClient, safeNext } from "@/lib/auth-client";
 import { buttonOutline, buttonPrimary, inputClass, labelClass } from "@/components/site/section";
+import { CheckIcon, EyeIcon, EyeOffIcon } from "@/components/site/icons";
 
 const GOOGLE = process.env.NEXT_PUBLIC_GOOGLE_AUTH === "1";
 
 function Field({ id, label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { id: string; label: string }) {
   return <div><label htmlFor={id} className={labelClass}>{label}</label><input id={id} name={id} className={inputClass} {...props} /></div>;
+}
+
+const RULES: [string, (pw: string) => boolean][] = [
+  ["8+ characters", (pw) => pw.length >= 8],
+  ["Upper & lowercase", (pw) => /[a-z]/.test(pw) && /[A-Z]/.test(pw)],
+  ["A number", (pw) => /\d/.test(pw)],
+  ["A symbol", (pw) => /[^A-Za-z0-9]/.test(pw)],
+];
+const LEVELS = [
+  { label: "Too short", bar: "bg-destructive" },
+  { label: "Weak", bar: "bg-destructive" },
+  { label: "Fair", bar: "bg-gold" },
+  { label: "Good", bar: "bg-emerald-500" },
+  { label: "Strong", bar: "bg-emerald-700" },
+];
+
+/** 0 = under 8 chars, else 1–4 from rules met (+1 for 12+ characters). */
+function strength(pw: string) {
+  if (pw.length < 8) return 0;
+  const met = RULES.filter(([, test]) => test(pw)).length + (pw.length >= 12 ? 1 : 0);
+  return Math.min(4, Math.max(1, met - 1));
+}
+
+function PasswordField({ id, label, meter, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { id: string; label: string; meter?: boolean }) {
+  const [show, setShow] = useState(false);
+  const [value, setValue] = useState("");
+  const score = strength(value);
+  const level = LEVELS[score];
+  return (
+    <div>
+      <label htmlFor={id} className={labelClass}>{label}</label>
+      <div className="relative">
+        <input id={id} name={id} type={show ? "text" : "password"} value={value} onChange={(e) => setValue(e.target.value)}
+          className={`${inputClass} pr-12`} aria-describedby={meter ? `${id}-strength` : undefined} {...props} />
+        <button type="button" onClick={() => setShow(!show)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show}
+          className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-muted-foreground transition-colors hover:text-foreground">
+          {show ? <EyeOffIcon /> : <EyeIcon />}
+        </button>
+      </div>
+      {meter && value && (
+        <div id={`${id}-strength`} className="mt-3">
+          <div className="flex items-center gap-3">
+            <div className="grid flex-1 grid-cols-4 gap-1.5" aria-hidden>
+              {[1, 2, 3, 4].map((i) => <span key={i} className={`h-1 rounded-full transition-colors ${i <= Math.max(1, score) ? level.bar : "bg-sand"}`} />)}
+            </div>
+            <span className="w-16 text-right text-xs" aria-live="polite">{level.label}</span>
+          </div>
+          <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+            {RULES.map(([rule, test]) => {
+              const ok = test(value);
+              return <li key={rule} className={`flex items-center gap-1.5 ${ok ? "text-foreground" : "text-muted-foreground"}`}><CheckIcon width={14} className={ok ? "text-emerald-600" : "opacity-30"} />{rule}<span className="sr-only">{ok ? " (met)" : " (not met)"}</span></li>;
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Notice({ tone, children }: { tone: "error" | "ok"; children: React.ReactNode }) {
@@ -48,7 +106,7 @@ export function SignInForm() {
       {error && <Notice tone="error">{error}</Notice>}
       {info && <Notice tone="ok">{info}</Notice>}
       <Field id="email" label="Email" type="email" autoComplete="email" required />
-      <Field id="password" label="Password" type="password" autoComplete="current-password" required />
+      <PasswordField id="password" label="Password" autoComplete="current-password" required />
       <Link href="/forgot-password" className="-mt-2 justify-self-end text-xs underline underline-offset-4">Forgot password?</Link>
       <button type="submit" disabled={pending} className={buttonPrimary}>{pending ? "Signing in…" : "Sign in"}</button>
       <p className="text-center text-sm text-muted-foreground">New to Melaré? <Link href={`/sign-up?next=${encodeURIComponent(next)}`} className="text-foreground underline underline-offset-4">Create an account</Link></p>
@@ -80,7 +138,7 @@ export function SignUpForm() {
       {error && <Notice tone="error">{error}</Notice>}
       <Field id="name" label="Full name" autoComplete="name" required minLength={2} maxLength={80} />
       <Field id="email" label="Email" type="email" autoComplete="email" required />
-      <Field id="password" label="Password (8+ characters)" type="password" autoComplete="new-password" required minLength={8} maxLength={128} />
+      <PasswordField id="password" label="Password" autoComplete="new-password" required minLength={8} maxLength={128} meter />
       <button type="submit" disabled={pending} className={buttonPrimary}>{pending ? "Creating account…" : "Create account"}</button>
       <p className="text-center text-xs text-muted-foreground">By creating an account you agree to our <Link href="/terms" className="underline">Terms</Link> and <Link href="/privacy" className="underline">Privacy policy</Link>.</p>
       <p className="text-center text-sm text-muted-foreground">Already have an account? <Link href={`/sign-in?next=${encodeURIComponent(next)}`} className="text-foreground underline underline-offset-4">Sign in</Link></p>
@@ -126,8 +184,8 @@ export function ResetPasswordForm() {
       });
     }}>
       {error && <Notice tone="error">{error}</Notice>}
-      <Field id="password" label="New password" type="password" autoComplete="new-password" required minLength={8} maxLength={128} />
-      <Field id="confirm" label="Confirm new password" type="password" autoComplete="new-password" required minLength={8} maxLength={128} />
+      <PasswordField id="password" label="New password" autoComplete="new-password" required minLength={8} maxLength={128} meter />
+      <PasswordField id="confirm" label="Confirm new password" autoComplete="new-password" required minLength={8} maxLength={128} />
       <button type="submit" disabled={pending} className={buttonPrimary}>{pending ? "Saving…" : "Set new password"}</button>
     </form>
   );

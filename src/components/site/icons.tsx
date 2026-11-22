@@ -16,3 +16,6 @@ export const LeafIcon = (p: P) => <svg {...base} {...p}><path d="M5 19c0-8 5-13 
 export const MinusIcon = (p: P) => <svg {...base} {...p}><path d="M6 12h12" /></svg>;
 export const PlusIcon = (p: P) => <svg {...base} {...p}><path d="M12 6v12M6 12h12" /></svg>;
 export const CloseIcon = (p: P) => <svg {...base} {...p}><path d="M6 6l12 12M18 6L6 18" /></svg>;
+export const EyeIcon = (p: P) => <svg {...base} {...p}><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="3" /></svg>;
+export const EyeOffIcon = (p: P) => <svg {...base} {...p}><path d="M4 4l16 16M10 6c.6-.1 1.3-.5 2-.5 6 0 9.5 6.5 9.5 6.5a17 17 0 01-2.6 3.4M6.6 7.6C4 9.3 2.5 12 2.5 12S6 18.5 12 18.5c1.7 0 3.2-.5 4.4-1.2M9.9 9.9a3 3 0 004.2 4.2" /></svg>;
+export const CheckIcon = (p: P) => <svg {...base} {...p}><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>;
