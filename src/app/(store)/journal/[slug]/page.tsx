@@ -17,7 +17,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps<"/journal/[slug]">): Promise<Metadata> {
   const a = getArticle((await params).slug);
-  if (!a) return { title: "Not found", robots: { index: false } };
+  if (!a) notFound();
   return {
     title: a.title, description: a.description, alternates: { canonical: `/journal/${a.slug}` },
     openGraph: { type: "article", title: a.title, description: a.description, publishedTime: a.published, images: [{ url: a.image, alt: a.imageAlt }] },

@@ -1,20 +1,22 @@
 "use client";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { addToCart } from "@/app/actions/cart";
 import { notifyWhenInStock } from "@/app/actions/store";
 import { formatMoney, type Currency } from "@/lib/money";
 import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
+import { useAddToBag } from "./use-add-to-bag";
 import { MinusIcon, PlusIcon } from "@/components/site/icons";
 import { buttonPrimary, inputClass } from "@/components/site/section";
 
 type Variant = { id: string; label: string; price: number; compareAt: number | null; stock: number };
 
 export function ProductBuy({ productId, name, variants, currency }: { productId: string; name: string; variants: Variant[]; currency: Currency }) {
-  const [selected, setSelected] = useState(variants.find((v) => v.stock > 0) ?? variants[0]);
+  // Keep only the id in state; price/stock always come from props (they change with currency).
+  const [selectedId, setSelectedId] = useState((variants.find((v) => v.stock > 0) ?? variants[0]).id);
+  const selected = variants.find((v) => v.id === selectedId) ?? variants[0];
   const [qty, setQty] = useState(1);
-  const [pending, start] = useTransition();
+  const { add: addToBag, pending } = useAddToBag();
   const [showBar, setShowBar] = useState(false);
   const mainBtn = useRef<HTMLButtonElement>(null);
   const max = Math.min(10, selected.stock);
@@ -33,13 +35,8 @@ export function ProductBuy({ productId, name, variants, currency }: { productId:
     return () => io.disconnect();
   }, [soldOut]);
 
-  const add = () => start(async () => {
-    const r = await addToCart({ variantId: selected.id, quantity: qty });
-    if (r.ok) {
-      toast.success(`${name} added to your bag`, { action: { label: "View bag", onClick: () => (window.location.href = "/cart") } });
-      track("add_to_cart", currency, (selected.price * qty) / 100, [{ item_id: productId, item_name: name, price: selected.price / 100, quantity: qty }]);
-    } else toast.error(r.error);
-  });
+  const add = () => addToBag({ variantId: selected.id, quantity: qty }, `${name} added to your bag`,
+    () => track("add_to_cart", currency, (selected.price * qty) / 100, [{ item_id: productId, item_name: name, price: selected.price / 100, quantity: qty }]));
 
   return (
     <div className="flex flex-col gap-5">
@@ -53,7 +50,7 @@ export function ProductBuy({ productId, name, variants, currency }: { productId:
           <legend className="eyebrow mb-2 text-muted-foreground">Size</legend>
           <div className="flex flex-wrap gap-2">
             {variants.map((v) => (
-              <button key={v.id} type="button" aria-pressed={v.id === selected.id} onClick={() => { setSelected(v); setQty(1); }}
+              <button key={v.id} type="button" aria-pressed={v.id === selected.id} onClick={() => { setSelectedId(v.id); setQty(1); }}
                 className={cn("h-11 min-w-20 rounded-full border px-5 text-sm transition-colors", v.id === selected.id ? "border-foreground bg-foreground text-background" : "border-foreground/25", v.stock <= 0 && "line-through opacity-60")}>
                 {v.label}
               </button>

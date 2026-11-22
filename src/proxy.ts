@@ -1,14 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
-// Optimistic redirect for signed-out visitors. Real authorization happens on the server in every page and action.
+// Optimistic gate only. Real authorization happens on the server in every page, action and route.
 export function proxy(req: NextRequest) {
-  if (!getSessionCookie(req)) {
-    const url = new URL("/sign-in", req.url);
-    url.searchParams.set("next", req.nextUrl.pathname);
-    return NextResponse.redirect(url);
-  }
-  return NextResponse.next();
+  if (getSessionCookie(req)) return NextResponse.next();
+  if (req.nextUrl.pathname.startsWith("/admin")) return new NextResponse("Not found", { status: 404 }); // don't reveal admin to guests
+  const url = new URL("/sign-in", req.url);
+  url.searchParams.set("next", req.nextUrl.pathname);
+  return NextResponse.redirect(url);
 }
 
-export const config = { matcher: ["/account/:path*"] };
+export const config = { matcher: ["/account/:path*", "/admin/:path*"] };

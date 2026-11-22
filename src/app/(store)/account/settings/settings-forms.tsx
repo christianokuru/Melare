@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
+import { toastResult } from "@/lib/toast-result";
 import { updateProfile } from "@/app/actions/account";
 import { authClient } from "@/lib/auth-client";
 import { buttonOutline, buttonPrimary, inputClass, labelClass } from "@/components/site/section";
@@ -14,7 +15,7 @@ export function SettingsForms({ name, phone, email }: { name: string; phone: str
       <form className="grid gap-4" onSubmit={(e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
-        start(async () => { const r = await updateProfile({ name: String(f.get("name")), phone: String(f.get("phone")) }); r.ok ? toast.success("Profile updated") : toast.error(r.error); });
+        start(async () => { const r = await updateProfile({ name: String(f.get("name")), phone: String(f.get("phone")) }); toastResult(r, "Profile updated"); });
       }}>
         <h2 className="font-heading text-2xl">Profile</h2>
         <div><label className={labelClass} htmlFor="s-email">Email</label><input id="s-email" value={email} readOnly className={`${inputClass} bg-muted`} /></div>

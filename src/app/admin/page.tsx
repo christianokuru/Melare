@@ -10,10 +10,9 @@ const PAID = ["paid", "processing", "shipped", "delivered"] as const;
 
 export default async function AdminHome() {
   await requireAdmin();
-  const since = new Date(Date.now() - 30 * 86_400_000);
   const [revenue, toShip, lowStock, recent, customers, pendingReviews] = await Promise.all([
     db.select({ currency: s.orders.currency, total: sql<number>`coalesce(sum(${s.orders.total}),0)::int`, count: sql<number>`count(*)::int` })
-      .from(s.orders).where(and(inArray(s.orders.status, [...PAID]), gte(s.orders.paidAt, since))).groupBy(s.orders.currency),
+      .from(s.orders).where(and(inArray(s.orders.status, [...PAID]), gte(s.orders.paidAt, sql`now() - interval '30 days'`))).groupBy(s.orders.currency),
     db.select({ n: sql<number>`count(*)::int` }).from(s.orders).where(inArray(s.orders.status, ["paid", "processing"])),
     db.select({ id: s.productVariants.id, sku: s.productVariants.sku, label: s.productVariants.label, stock: s.productVariants.stock, name: s.products.name, productId: s.products.id })
       .from(s.productVariants).innerJoin(s.products, eq(s.products.id, s.productVariants.productId))

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { toastResult } from "@/lib/toast-result";
 import { updateOrder } from "@/app/actions/admin";
 import { STATUS_LABEL } from "@/components/order/order-view";
 import { adminButton, adminInput, adminLabel } from "@/components/admin/ui";
@@ -21,7 +21,7 @@ export function OrderStatusForm({ id, status, trackingNumber, note }: { id: stri
       if ((next === "cancelled" || next === "refunded") && !confirm(`Mark this order as ${next}? Remember to refund the payment in Flutterwave.`)) return;
       start(async () => {
         const r = await updateOrder({ id, status: next as "paid", trackingNumber: String(f.get("tracking")), note: String(f.get("note")), restock });
-        r.ok ? toast.success("Order updated") : toast.error(r.error);
+        toastResult(r, "Order updated");
       });
     }}>
       <h2 className="mb-4 font-heading text-2xl">Update order</h2>

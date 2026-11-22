@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Suspense } from "react";
 import { asc, desc, eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
@@ -8,7 +8,7 @@ import { getSession } from "@/lib/auth";
 import { getCurrency } from "@/lib/request";
 import { lineUnit } from "@/lib/checkout";
 import { quoteCheckout } from "@/app/actions/checkout";
-import { container } from "@/components/site/section";
+import { buttonPrimary, container } from "@/components/site/section";
 import { CheckoutForm } from "@/components/checkout/checkout-form";
 
 export const metadata: Metadata = { title: "Checkout", robots: { index: false, follow: false } };
@@ -24,8 +24,15 @@ export default function CheckoutPage() {
 
 async function Checkout() {
   const [{ lines }, session, currency] = await Promise.all([getCart(), getSession(), getCurrency()]);
-  if (!lines.length) redirect("/cart");
-  if (lines.some((l) => l.maxQty < l.quantity)) redirect("/cart");
+  if (!lines.length || lines.some((l) => l.maxQty < l.quantity)) {
+    return (
+      <div className="py-10 text-center">
+        <p className="font-heading text-3xl">{lines.length ? "Some items in your bag changed" : "Your bag is empty"}</p>
+        <p className="mt-2 text-muted-foreground">{lines.length ? "Please review availability in your bag before checking out." : "Add something you love to check out."}</p>
+        <Link href={lines.length ? "/cart" : "/shop"} className={`${buttonPrimary} mt-6`}>{lines.length ? "Review my bag" : "Shop now"}</Link>
+      </div>
+    );
+  }
   const [saved] = session
     ? await db.select().from(s.addresses).where(eq(s.addresses.userId, session.user.id)).orderBy(desc(s.addresses.isDefault), asc(s.addresses.createdAt)).limit(1)
     : [];

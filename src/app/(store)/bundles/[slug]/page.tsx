@@ -17,7 +17,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps<"/bundles/[slug]">): Promise<Metadata> {
   const b = await getBundle((await params).slug);
-  if (!b) return { title: "Not found", robots: { index: false } };
+  if (!b) notFound();
   return {
     title: `${b.name} · Save ${b.discountPercent}%`, description: b.description.slice(0, 158),
     alternates: { canonical: `/bundles/${b.slug}` }, openGraph: { images: [b.image] },

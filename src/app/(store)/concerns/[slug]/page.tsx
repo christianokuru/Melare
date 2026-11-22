@@ -11,7 +11,7 @@ const find = (slug: string) => CONCERNS.find((c) => c.slug === slug);
 
 export async function generateMetadata({ params }: PageProps<"/concerns/[slug]">): Promise<Metadata> {
   const c = find((await params).slug);
-  if (!c) return { title: "Not found", robots: { index: false } };
+  if (!c) notFound();
   return {
     title: `Best Skincare for ${c.name} on Dark Skin`,
     description: `${c.blurb} Melaré skincare for ${c.name.toLowerCase()} on melanin-rich skin, delivered in Lagos, Nigeria and worldwide.`,

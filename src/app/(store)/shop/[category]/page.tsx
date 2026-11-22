@@ -13,7 +13,7 @@ async function find(slug: string) {
 
 export async function generateMetadata({ params }: PageProps<"/shop/[category]">): Promise<Metadata> {
   const c = await find((await params).category);
-  if (!c) return { title: "Not found", robots: { index: false } };
+  if (!c) notFound();
   return {
     title: `${c.name} for Melanin-Rich Skin`,
     description: c.description ?? `Shop Melaré ${c.name.toLowerCase()} made for Black and brown skin.`,

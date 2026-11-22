@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { toastResult } from "@/lib/toast-result";
 import { archiveProduct, saveProduct } from "@/app/actions/admin";
 import { CONCERNS, SKIN_TYPES } from "@/lib/constants";
 import { slugify } from "@/lib/utils";
@@ -117,7 +118,7 @@ export function ProductForm({ categories, product }: { categories: { id: string;
       <div className="flex flex-wrap gap-3">
         <button type="submit" disabled={pending} className={adminButton}>{pending ? "Saving…" : "Save product"}</button>
         {product && product.status !== "archived" && (
-          <button type="button" disabled={pending} className={adminGhost} onClick={() => confirm("Archive this product? It will be hidden from the store.") && start(async () => { const r = await archiveProduct(product.id); r.ok ? toast.success("Archived") : toast.error(r.error); })}>Archive</button>
+          <button type="button" disabled={pending} className={adminGhost} onClick={() => confirm("Archive this product? It will be hidden from the store.") && start(async () => { const r = await archiveProduct(product.id); toastResult(r, "Archived"); })}>Archive</button>
         )}
       </div>
     </form>

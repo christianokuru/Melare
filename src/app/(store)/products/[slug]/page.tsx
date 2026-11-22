@@ -26,7 +26,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps<"/products/[slug]">): Promise<Metadata> {
   const p = await getProduct((await params).slug);
-  if (!p) return { title: "Product not found", robots: { index: false } };
+  if (!p) notFound();
   const title = p.seoTitle ?? `${p.name} · ${p.tagline}`;
   const description = p.seoDescription ?? `${p.description.slice(0, 150)}…`;
   return {

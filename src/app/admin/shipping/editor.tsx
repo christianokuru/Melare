@@ -1,6 +1,6 @@
 "use client";
 import { useTransition } from "react";
-import { toast } from "sonner";
+import { toastResult } from "@/lib/toast-result";
 import { deleteZone, saveZone } from "@/app/actions/admin";
 import { adminButton, adminInput, adminLabel } from "@/components/admin/ui";
 
@@ -20,7 +20,7 @@ export function ZoneEditor({ zones }: { zones: Zone[] }) {
           start(async () => {
             const r = await saveZone({ id: z.id, name: String(f.get("name")), country: String(f.get("country")), state: String(f.get("state")), feeNgn: minor(f.get("feeNgn")) ?? 0, feeUsd: minor(f.get("feeUsd")) ?? 0,
               freeOverNgn: minor(f.get("freeNgn")), freeOverUsd: minor(f.get("freeUsd")), eta: String(f.get("eta")), position: Number(f.get("position")) });
-            r.ok ? toast.success("Saved") : toast.error(r.error);
+            toastResult(r, "Saved");
           });
         }}>
           {([["name", "Name", z.name], ["country", "Country (NG / *)", z.country], ["state", "State (opt.)", z.state ?? ""], ["feeNgn", "Fee ₦", major(z.feeNgn)], ["feeUsd", "Fee $", major(z.feeUsd)],
@@ -29,7 +29,7 @@ export function ZoneEditor({ zones }: { zones: Zone[] }) {
           ))}
           <div className="flex items-end gap-2">
             <button type="submit" disabled={pending} className={adminButton}>{z.id ? "Save" : "Add"}</button>
-            {z.id && <button type="button" disabled={pending} onClick={() => confirm(`Delete ${z.name}?`) && start(async () => { const r = await deleteZone(z.id!); r.ok ? toast.success("Deleted") : toast.error(r.error); })} className="h-10 text-xs text-destructive underline">Delete</button>}
+            {z.id && <button type="button" disabled={pending} onClick={() => confirm(`Delete ${z.name}?`) && start(async () => { const r = await deleteZone(z.id!); toastResult(r, "Deleted"); })} className="h-10 text-xs text-destructive underline">Delete</button>}
           </div>
         </form>
       ))}
