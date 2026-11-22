@@ -32,7 +32,8 @@ export async function createPaymentLink(p: {
       session_duration: 60,
       max_retry_attempt: 5,
       customer: { email: p.email, name: p.name, phonenumber: p.phone },
-      customizations: { title: "Melaré", description: "Skin, but rarer.", logo: `${APP_URL}/icon-512.png` },
+      // Flutterwave fetches the logo publicly, so only send it on a real https domain (never localhost).
+      customizations: { title: "Melare", description: "Skin, but rarer.", ...(APP_URL.startsWith("https://") && { logo: `${APP_URL}/icon-512.png` }) },
     }),
   });
   const json = await res.json().catch(() => null);
