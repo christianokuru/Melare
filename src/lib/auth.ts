@@ -4,6 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { connection } from "next/server";
 import { db, schema } from "@/db";
 import { sendEmail, escapeHtml, APP_URL } from "./email";
 import { randomCode } from "./utils";
@@ -68,7 +69,11 @@ export const auth = betterAuth({
 
 export type SessionUser = typeof auth.$Infer.Session.user;
 
-export const getSession = async () => auth.api.getSession({ headers: await headers() });
+// connection() marks every session/cart read as request-time, so DB access (which uses crypto) never runs during prerender.
+export const getSession = async () => {
+  await connection();
+  return auth.api.getSession({ headers: await headers() });
+};
 
 /** The single admin: verified owner of ADMIN_EMAIL. Never derived from client-writable data. */
 export function isAdmin(user: Pick<SessionUser, "email" | "emailVerified"> | undefined | null) {
