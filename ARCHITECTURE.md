@@ -1,6 +1,6 @@
 # Melaré · Architecture
 
-Mobile-first PWA skincare store. One Next.js 16 app on Vercel (UI + API), Neon Postgres, Flutterwave payments.
+Mobile-first PWA skincare store. One Next.js 16 app on Vercel (UI + API), Neon Postgres, Paystack + Flutterwave payments.
 
 ## Stack
 | Layer | Choice |
@@ -9,7 +9,7 @@ Mobile-first PWA skincare store. One Next.js 16 app on Vercel (UI + API), Neon P
 | UI | Tailwind v4, shadcn (Base UI), Lenis smooth scroll, Cormorant Garamond + Jost |
 | Auth | Better Auth: email/password with **required email verification**, optional Google, DB-backed rate limits |
 | DB | Neon Postgres + Drizzle ORM (`neon-serverless` WebSocket pool → real transactions and row locks) |
-| Payments | Flutterwave Standard (NGN: card/transfer/USSD; USD: card) |
+| Payments | Paystack (NGN: card/transfer/USSD/bank) + Flutterwave (USD: card; NGN fallback) via `src/lib/gateways.ts`, customer picks at checkout |
 | Email | Resend REST (logs to console when no key) |
 | Images | Neon Object Storage (`public_read` bucket `melare-media`), optimised and cached by `next/image` |
 | Jobs | Vercel Cron → `/api/cron/daily` |
