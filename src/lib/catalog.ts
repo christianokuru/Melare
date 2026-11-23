@@ -94,6 +94,22 @@ export async function getReviews(productId: string) {
     .from(s.reviews).where(and(eq(s.reviews.productId, productId), eq(s.reviews.approved, true))).orderBy(desc(s.reviews.createdAt)).limit(50);
 }
 
+/** Store-wide social proof for the home page: average rating, count and recent 4–5★ reviews (approved, active products). */
+export async function getReviewHighlights() {
+  "use cache";
+  cacheLife("hours");
+  cacheTag(CATALOG_TAG);
+  const visible = and(eq(s.reviews.approved, true), eq(s.products.status, "active"));
+  const [[summary], reviews] = await Promise.all([
+    db.select({ avg: sql<number>`coalesce(round(avg(${s.reviews.rating})::numeric, 1), 0)::float`, count: sql<number>`count(*)::int` })
+      .from(s.reviews).innerJoin(s.products, eq(s.products.id, s.reviews.productId)).where(visible),
+    db.select({ id: s.reviews.id, authorName: s.reviews.authorName, rating: s.reviews.rating, title: s.reviews.title, body: s.reviews.body, skinType: s.reviews.skinType, product: s.products.name, slug: s.products.slug })
+      .from(s.reviews).innerJoin(s.products, eq(s.products.id, s.reviews.productId)).where(and(visible, sql`${s.reviews.rating} >= 4`))
+      .orderBy(desc(s.reviews.createdAt)).limit(10),
+  ]);
+  return { avg: Number(summary.avg), count: summary.count, reviews };
+}
+
 export async function getRelated(productId: string, concerns: string[]) {
   "use cache";
   cacheLife("hours");
