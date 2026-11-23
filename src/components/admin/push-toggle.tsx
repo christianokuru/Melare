@@ -53,7 +53,7 @@ export function PushToggle({ publicKey }: { publicKey: string }) {
       setState("on");
       toast.success("New-order alerts are on for this device");
     } catch (e) {
-      console.error("[push]", step, e);
+      console.warn("[push]", step, e); // warn: the toast already explains it (avoids the dev error overlay)
       const why = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       toast.error(`Couldn’t turn on alerts while ${step}. ${why}`, { duration: 15000 });
     }
