@@ -5,12 +5,11 @@ import { count, eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { getSession } from "@/lib/auth";
 import { getCartLines, resolveCartId } from "@/lib/cart";
-import { getCurrency } from "@/lib/request";
 import { throttle } from "@/lib/throttle";
 import { randomCode } from "@/lib/utils";
-import { COUNTRIES, ORDER_PAYMENT_WINDOW_MIN } from "@/lib/constants";
+import { COUNTRIES, MAX_OPEN_ORDERS, MAX_ORDER_UNITS, NG_STATES, ORDER_PAYMENT_WINDOW_MIN } from "@/lib/constants";
 import {
-  applyCode, expireStaleOrders, lineUnit, logOrderEvent, OutOfStockError, releaseOrderStock, reserveStock, shippingFee, stockNeeds, subtotalOf, zoneFor,
+  applyCode, currencyFor, expireStaleOrders, lineUnit, lockBuyer, logOrderEvent, openOrders, OutOfStockError, releaseOrderStock, reserveStock, shippingFee, stockNeeds, subtotalOf, zoneFor,
   type Applied, type Buyer,
 } from "@/lib/checkout";
 import { createPaymentLink } from "@/lib/payments";
@@ -25,34 +24,35 @@ const Address = z.object({
   state: text(60),
   country: z.string().refine((c) => c in COUNTRIES, "Choose a country"),
   postalCode: z.string().trim().max(20).optional().default(""),
-});
-const CheckoutInput = Address.extend({
+}).refine((a) => a.country !== "NG" || NG_STATES.includes(a.state), { path: ["state"], message: "Choose your state" });
+const CheckoutInput = Address.and(z.object({
   email: z.string().trim().toLowerCase().email().max(254),
   code: z.string().trim().max(32).optional().default(""),
   saveAddress: z.boolean().optional().default(false),
-});
+}));
 
 export type Quote = {
   currency: "NGN" | "USD"; subtotal: number; discount: number; shipping: number; total: number;
   zone: string | null; eta: string | null; codeError?: string; codeApplied?: string;
 };
 
-async function buyerFor(email: string): Promise<Buyer> {
+async function buyerFor(email: string, phone?: string): Promise<Buyer> {
   const session = await getSession();
-  return session ? { userId: session.user.id, email: session.user.email.toLowerCase() } : { userId: null, email };
+  return session ? { userId: session.user.id, email: session.user.email.toLowerCase(), phone } : { userId: null, email, phone };
 }
 
 /** Live order summary for the checkout page. Same math as placeOrder. */
-export async function quoteCheckout(input: { country: string; state: string; code?: string; email?: string }): Promise<Quote | { error: string }> {
+export async function quoteCheckout(input: { country: string; state: string; code?: string; phone?: string }): Promise<Quote | { error: string }> {
   if (!(await throttle("quote", 40, 600))) return { error: "Too many attempts. Please wait a few minutes." };
-  const country = input.country in COUNTRIES ? input.country : "NG";
-  const currency = await getCurrency();
+  const country = typeof input.country === "string" && input.country in COUNTRIES ? input.country : "NG";
+  const currency = currencyFor(country);
   const lines = await getCartLines(await resolveCartId());
   const subtotal = subtotalOf(lines, currency);
-  const buyer = await buyerFor(z.string().email().safeParse(input.email).success ? input.email!.toLowerCase() : "");
+  const buyer = await buyerFor("", typeof input.phone === "string" ? input.phone.slice(0, 30) : undefined);
   let discount = 0, codeError: string | undefined, codeApplied: string | undefined;
-  if (input.code?.trim() && subtotal > 0) {
-    if (!buyer.email) codeError = "Enter your email first to apply a code.";
+  if (typeof input.code === "string" && input.code.trim() && subtotal > 0) {
+    if (!buyer.userId) codeError = "Sign in to use a promo or referral code.";
+    else if (!(await throttle("code", 20, 3600, buyer.userId))) codeError = "Too many code attempts. Please try again later.";
     else {
       const r = await applyCode(input.code, buyer, currency, subtotal);
       if (r.ok) { discount = r.applied.discount; codeApplied = r.applied.code; } else codeError = r.error;
@@ -69,17 +69,18 @@ export async function placeOrder(input: z.input<typeof CheckoutInput>): Promise<
     const fields = Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message]));
     return { error: "Please check the highlighted fields.", fields };
   }
-  if (!(await throttle("checkout", 10, 600))) return { error: "Too many checkout attempts. Please wait a few minutes." };
+  if (!(await throttle("checkout", 6, 3600))) return { error: "Too many checkout attempts. Please try again later." };
   const d = parsed.data;
   const session = await getSession();
-  const buyer = await buyerFor(d.email);
-  const currency = await getCurrency();
+  const buyer = await buyerFor(d.email, d.phone);
+  const currency = currencyFor(d.country);
   await expireStaleOrders();
 
   const cartId = await resolveCartId();
   const lines = await getCartLines(cartId);
   if (!cartId || !lines.length) return { error: "Your bag is empty." };
   if (lines.some((l) => l.maxQty < l.quantity)) return { error: "Some items in your bag changed availability. Please review your bag." };
+  if (lines.reduce((n, l) => n + l.quantity, 0) > MAX_ORDER_UNITS) return { error: `You can order up to ${MAX_ORDER_UNITS} items at once. For larger orders, chat with us on WhatsApp.` };
 
   const zone = await zoneFor(d.country, d.state);
   if (!zone) return { error: "We don’t deliver to this location yet." };
@@ -89,10 +90,12 @@ export async function placeOrder(input: z.input<typeof CheckoutInput>): Promise<
   let order: { id: string; total: number };
   try {
     order = await db.transaction(async (tx) => {
+      await lockBuyer(tx, buyer); // one checkout at a time per person: open-order cap + code rules can't be raced
+      if ((await openOrders(tx, buyer, cartId)) >= MAX_OPEN_ORDERS) throw new CheckoutError("You already have unpaid orders. Pay or let them expire before placing another (unpaid orders are cancelled after 30 minutes).");
       const subtotal = subtotalOf(lines, currency);
       let applied: Applied | null = null;
       if (d.code) {
-        const r = await applyCode(d.code, buyer, currency, subtotal, tx);
+        const r = await applyCode(d.code, buyer, currency, subtotal, tx, true);
         if (!r.ok) throw new CheckoutError(r.error);
         applied = r.applied;
       }

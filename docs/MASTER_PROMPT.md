@@ -21,6 +21,22 @@ You are building a production e-commerce website for me as a **senior software e
 ## Ownership (non-negotiable)
 Treat this as **your own project**. Take **full control and responsibility from start to finish**: decide, build, test, fix, refactor, document and push without waiting to be told each step. Don't hand back half-done work or leave TODOs for me. If something blocks you (missing key, account access), say exactly what you need, keep going on everything else, and finish it once unblocked. You own quality, security, design and the business outcome until the site is complete.
 
+## Hacker mode (non-negotiable)
+You are also a **sneaky, professional attacker** against your own work. Build every feature assuming someone is actively trying to steal money, data or accounts, and **before every handoff** (and whenever I say "act like a hacker") run a full adversarial review:
+1. **Map the attack surface:** every `"use server"` export (each is a public endpoint), every route handler, Better Auth's own `/api/auth/*` endpoints (not just our forms), webhooks, cron, uploads, exports, emails, service worker, headers, dependencies.
+2. **Think in exploits, not checklists:**
+   - **Business logic:** coupon/referral farming with email aliases and unverified guest emails, self-referral, near-free orders.
+   - **Abuse at scale:** race conditions with parallel requests (multiple pending orders), inventory hoarding, price/currency arbitrage.
+   - **Access control:** IDOR, open redirects (incl. `/%09/evil.com` tab/newline bypass), CSRF on route handlers, SSRF.
+   - **Leaks:** tokens leaking to analytics, Referer or history.
+   - **Email and accounts:** email bombing and phishing text through sign-up/newsletter, pre-account takeover / verification-link tricks.
+   - **Injection:** XSS/CSP, CSV formula injection.
+   - **Limits and sessions:** rate-limit bypass via spoofed IP headers, session revocation delays (cookie caches).
+   - **DoS:** unthrottled external API calls, large request bodies; vulnerable dependencies.
+3. **Prove it:** reproduce each finding (curl, Playwright, or a failing test) before reporting; drop anything a library already prevents (check its source).
+4. **Report** findings ranked 🔴 High / 🟠 Medium / 🟡 Low with exact exploit steps and impact. If I said "only list them", list only.
+5. **When told to fix:** fix **all** (omit none), add a regression test or probe per finding, re-run the exploit to confirm it's dead, run full tests + build, push, update docs, and say plainly if anything can't be fully fixed and why (with the mitigation applied).
+
 ## Phase 0: scaffold only, then STOP and wait
 On the first message, **only scaffold**; do not write features yet:
 1. Latest Next.js (App Router, TypeScript, `src/`, ESLint), Tailwind v4, shadcn initialised (+ core components).
@@ -84,6 +100,20 @@ On the first message, **only scaffold**; do not write features yet:
 - **Bulk/inline admin actions** reuse the same server-side rules as single actions (status state machine, tracking required to ship, restock alerts).
 - **Customer data rights (NDPA/GDPR):** marketing opt-in toggle, "Download my data" (JSON, session-scoped), account deletion with password (admin can't be deleted; orders kept for accounting with `user_id` set null; subscriber/alerts/quiz rows removed).
 - Store settings (WhatsApp number, banner text) editable by admin, validated, cached with a tag and invalidated on save.
+- **Codes (coupons, referral):** require a signed-in verified account; once per *person* = account OR canonical email (Gmail dots/+tags stripped) OR phone; **unpaid orders count as uses** and hold a max-redemption slot; per-person advisory lock + coupon `FOR UPDATE` inside the order transaction; referral needs a minimum spend, never self (account, alias, own phone), first order only and **re-checked when payment lands** (reward only for the first paid order; over-limit codes flagged). **One generic error** for every invalid code (no guessing oracle); code attempts rate-limited per account.
+- **Stock hoarding:** short payment window (30 min), max 2 unpaid orders per person/cart, max units per order, checkout rate limit per IP.
+- **Currency:** charge in the delivery country's currency (NG → NGN, else USD); validate Nigerian states against the list.
+- **Redirects:** `safeNext` rejects `//`, backslashes, control/whitespace characters and anything that resolves off-origin.
+- **Analytics privacy:** never start analytics on token/PII pages (reset password, payment result, account, admin, auth, track); page views without query strings; `data-clarity-mask` on private layouts; scrub tokens/references from the URL (`history.replaceState`) after reading them; mask emails on pages reachable by link.
+- **Guest orders linked by email** show items/status only, never another person's address/phone (also in data export).
+- **Email:** newsletter **double opt-in** (signed expiring HMAC token); every marketing email (newsletter, quiz, bag/reorder/restock reminders) skips a **suppression list** and carries an unsubscribe link + RFC 8058 one-click `List-Unsubscribe` headers; per-recipient caps; **no user-chosen text in auth emails**; verification email warns "didn't sign up? don't click"; **names validated server-side in Better Auth hooks** (sign-up, update-user, social), images ignored.
+- **Sessions:** no Better Auth cookie cache, so sign-out-everywhere / password change / deletion take effect instantly.
+- **Rate-limit identity:** client IP only from trusted headers (`x-vercel-forwarded-for`, or `TRUST_PROXY_HEADERS=1` behind your own proxy); never trust raw `x-forwarded-for` elsewhere.
+- **Request size:** server actions keep Next's 1 MB default; uploads go through a route handler with `requireAdmin`, a same-origin check (route handlers have no built-in CSRF check), size limit and rate limit.
+- **Throttle anything that calls a paid/external API or does heavy work** (payment verification page, data export).
+- **Push alerts** carry no customer data (lock screens); emails carry the details.
+- **CSP:** Next needs `'unsafe-inline'` scripts for its streamed inline data (nonces would force fully dynamic rendering); enable `experimental.sri` so every JS chunk has an integrity hash, keep a short script-src allowlist.
+- **Dependencies:** `npm audit` must report 0; fix transitive advisories with `overrides` (verify the tools still work), never with downgrades; CLIs (shadcn, drizzle-kit) in devDependencies.
 - Secrets only in env vars; `.env*` ignored except `.env.example`.
 
 ## Mobile-first, clean, and built to sell
@@ -137,6 +167,7 @@ Home, shop, category, concern/need, product, bundles (list + detail), cart, chec
 - **Playwright E2E (mobile first):** browse → PDP → add to bag → bundle → cart qty → checkout validation → coupon → place order (graceful failure without payment keys: order cancelled and stock returned, verified in DB) → sign up → read verification link from server log → account (address, favourites, settings) → review blocked for non-buyers → admin login → create coupon → edit stock → upload image (fake file rejected) → CSV export. Also currency switch, sticky bar, mobile menu, search, empty states, quiz, newsletter, track order, consent banner gating (no analytics requests before Accept).
 - **Dashboard E2E** with a temporary seed script (orders in different states, reward code, subscriber, quiz result, abandoned cart; deleted afterwards): admin lands on `/admin`, badges, range switch, chart, phone search, tab counts, bulk update, CSV export contents, order timeline, cancel confirm dialog, packing slip hides sidebar in print, inline stock edit, duplicate + image reorder, customer page, abandoned bags, settings (invalid WhatsApp rejected, banner shows on storefront); customer: tracker, running low/review prompts/skin profile/rewards, tab bar + WhatsApp button above it, Buy again → bag, marketing toggle, data export JSON, delete account (wrong password rejected, then deleted, orders kept). 390px pages have no horizontal scroll.
 - **Security probes:** webhook/cron without secret → 401, admin as guest/customer → 404, open redirect blocked, wrong password, triple-tap add-to-bag.
+- **Security regression suite** (`tests/security.test.ts` + payments tests): open-redirect payloads, signed email links (wrong address/purpose/forged/expired), canonical email + phone identity, currency by country, name validation, unpaid-order cap; codes: guest blocked, one generic error, once per person incl. aliases/phone/pending orders, parallel checkouts (only one succeeds), referral min spend/self/first-order, reward only on first paid order. Browser probes: phishing name rejected (also via `/api/auth/update-user`), forged unsubscribe → 400, cross-origin upload → 403, payment page masks email + scrubs URL, no analytics on the reset page but present on /shop, reset token still usable after URL scrub, guests can't use codes, currency switch note, sign-out-everywhere kills other sessions instantly, newsletter needs the confirm link, unsubscribe suppresses. Prod build: 0 CSP violations with SRI.
 - Screenshots of key pages (mobile + desktop, plus a 2560px check for admin) and review them visually. Run dev mode and navigate (store, admin, account) to catch Next.js Suspense/instant-navigation insights; there must be none.
 - Push can't complete in a sandbox without push-service access: unit-test the server, then ask me to test on my device.
 
@@ -158,3 +189,6 @@ Home, shop, category, concern/need, product, bundles (list + detail), cart, chec
 - Playwright: `innerText` returns CSS-uppercased text (match case-insensitively); `getByRole` names match substrings (use `exact: true`); headless shell reports notifications as denied (use `channel: "chromium"` to test permission flows).
 - Phone search must normalise local vs international formats (strip leading 0, compare digits).
 - A test user can be verified directly in the DB: `update "user" set email_verified = true where email = '…'`.
+- Removing `'unsafe-inline'` from script-src breaks Next.js (inline flight data, 40+ violations, no hydration). SRI only covers external chunks.
+- Backslashes inside `` sql`…` `` template literals: write `\\D`, `\\+` (a single `\D` becomes `D`).
+- Clean up after security probes too: test users, orders, subscribers, suppressions, throttles and any uploaded bucket objects.

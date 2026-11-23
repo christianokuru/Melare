@@ -8,8 +8,15 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { db, schema } from "@/db";
-import { sendEmail, escapeHtml, APP_URL } from "./email";
-import { randomCode } from "./utils";
+import { sendEmail, APP_URL } from "./email";
+import { cleanName, PERSON_NAME, randomCode } from "./utils";
+
+/** Validates names on EVERY write path (sign-up, update-user, social), not just our forms. */
+function checkName(name: unknown) {
+  const n = cleanName(name);
+  if (!PERSON_NAME.test(n)) throw new APIError("BAD_REQUEST", { message: "Please enter your name using letters only (2–80 characters)." });
+  return n;
+}
 
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL ?? APP_URL,
@@ -22,9 +29,10 @@ export const auth = betterAuth({
     maxPasswordLength: 128,
     revokeSessionsOnPasswordReset: true,
     resetPasswordTokenExpiresIn: 60 * 30,
+    // No user-chosen text (e.g. the name) in auth emails: they go to addresses we haven't verified yet.
     sendResetPassword: async ({ user, url }) =>
       sendEmail(user.email, "Reset your Melaré password", "Reset your password",
-        `<p>Hi ${escapeHtml(user.name)}, tap below to choose a new password. This link expires in 30 minutes.</p><p>If you didn’t ask for this, you can ignore this email.</p>`,
+        "<p>Tap below to choose a new password. This link expires in 30 minutes.</p><p>If you didn’t ask for this, ignore this email: your password stays the same.</p>",
         { label: "Reset password", url }),
   },
   emailVerification: {
@@ -33,9 +41,9 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
     expiresIn: 60 * 60 * 24,
     sendVerificationEmail: async ({ user, url }) =>
-      sendEmail(user.email, "Confirm your email · Melaré", "Welcome to Melaré",
-        `<p>Hi ${escapeHtml(user.name)}, please confirm your email to finish creating your account.</p>`,
-        { label: "Confirm email", url }),
+      sendEmail(user.email, "Confirm your email · Melaré", "Confirm your email",
+        "<p>Someone created a Melaré account with this email address. If it was you, confirm below to finish setting it up.</p><p style=\"color:#6B5045\"><strong>Didn’t create an account?</strong> Don’t click the button: ignore this email and the account stays inactive.</p>",
+        { label: "Yes, this is my account", url }),
   },
   socialProviders: process.env.GOOGLE_CLIENT_ID
     ? { google: { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET! } }
@@ -63,7 +71,8 @@ export const auth = betterAuth({
       },
     },
   },
-  session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: true, maxAge: 60 * 5 } },
+  // No cookie cache: every request checks the DB, so revoked sessions (sign out everywhere, password reset, deletion) die instantly.
+  session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: false } },
   rateLimit: {
     enabled: true,
     storage: "database",
@@ -79,9 +88,14 @@ export const auth = betterAuth({
       "/delete-user": { window: 900, max: 5 },
     },
   },
-  advanced: { ipAddress: { ipAddressHeaders: ["x-real-ip", "x-forwarded-for"] } },
+  advanced: { ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for", "x-real-ip", "x-forwarded-for"] } },
   databaseHooks: {
-    user: { create: { before: async (user) => ({ data: { ...user, referralCode: randomCode(8) } }) } },
+    user: {
+      // Email sign-up: reject bad names. Social sign-in (Google): sanitise instead of failing the login.
+      create: { before: async (user, ctx) => ({ data: { ...user, image: null, referralCode: randomCode(8),
+        name: ctx?.path?.startsWith("/sign-up") ? checkName(user.name) : (PERSON_NAME.test(cleanName(String(user.name).replace(/[^\p{L}\p{M} '.-]/gu, ""))) ? cleanName(String(user.name).replace(/[^\p{L}\p{M} '.-]/gu, "")) : "Melaré customer") } }) },
+      update: { before: async (data) => ({ data: { ...data, ...("name" in data && { name: checkName(data.name) }), ...("image" in data && { image: null }) } }) },
+    },
   },
   plugins: [nextCookies()], // must stay last
 });

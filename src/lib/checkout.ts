@@ -1,14 +1,45 @@
 import "server-only";
-import { and, asc, eq, lt, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, notInArray, or, sql } from "drizzle-orm";
 import { db, schema as s, type Tx } from "@/db";
 import type { CartLine } from "./cart";
 import { priceIn, type Currency } from "./money";
-import { REFERRAL_REWARD } from "./constants";
+import { REFERRAL_MIN_SUBTOTAL, REFERRAL_REWARD } from "./constants";
 
 const UNIT = 100; // one naira / one dollar in minor units
-const NOT_PURCHASED = ["pending", "cancelled"] as const;
+const PAID = ["paid", "processing", "shipped", "delivered"] as const;
 
-export type Buyer = { userId: string | null; email: string };
+/** Who is buying. Codes need a signed-in (verified) account; phone is known at order time. */
+export type Buyer = { userId: string | null; email: string; phone?: string };
+
+/** One person = one identity: Gmail ignores dots and +tags; everyone ignores +tags. */
+export function canonicalEmail(email: string) {
+  const [local = "", domain = ""] = email.trim().toLowerCase().split("@");
+  const base = local.replace(/\+.*$/, "");
+  return domain === "gmail.com" || domain === "googlemail.com" ? `${base.replace(/\./g, "")}@gmail.com` : `${base}@${domain}`;
+}
+export const phoneKey = (phone: string | null | undefined) => (phone ?? "").replace(/\D/g, "").slice(-10); // local part, any prefix
+const canonSql = (col: unknown) => sql`(case when split_part(lower(${col}), '@', 2) in ('gmail.com', 'googlemail.com')
+  then replace(regexp_replace(split_part(lower(${col}), '@', 1), '\\+.*$', ''), '.', '') || '@gmail.com'
+  else regexp_replace(split_part(lower(${col}), '@', 1), '\\+.*$', '') || '@' || split_part(lower(${col}), '@', 2) end)`;
+const phoneSql = sql`right(regexp_replace(${s.orders.shippingAddress}->>'phone', '\\D', '', 'g'), 10)`;
+
+/** Orders belonging to this person: same account, same canonical email, or same phone. */
+function samePerson(buyer: Buyer) {
+  const phone = phoneKey(buyer.phone);
+  return or(
+    buyer.userId ? eq(s.orders.userId, buyer.userId) : undefined,
+    sql`${canonSql(s.orders.email)} = ${canonicalEmail(buyer.email)}`,
+    phone.length >= 7 ? sql`${phoneSql} = ${phone}` : undefined,
+  )!;
+}
+
+/** Serialises code use per person (canonical email + phone) so parallel checkouts can't reuse a code. */
+export async function lockBuyer(tx: Tx, buyer: Buyer) {
+  const keys = [`buyer:${canonicalEmail(buyer.email)}`, ...(phoneKey(buyer.phone).length >= 7 ? [`phone:${phoneKey(buyer.phone)}`] : [])].sort();
+  for (const k of keys) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${k}))`);
+}
+
+export const CODE_INVALID = "This code can’t be used on this order. Some codes need a minimum spend or can only be used once.";
 export type Applied =
   | { kind: "coupon"; couponId: string; code: string; discount: number }
   | { kind: "referral"; referrerId: string; code: string; discount: number };
@@ -35,49 +66,77 @@ export function shippingFee(zone: typeof s.shippingZones.$inferSelect, currency:
   return priceIn({ priceNgn: zone.feeNgn, priceUsd: zone.feeUsd }, currency);
 }
 
-async function hasPurchased(buyer: Buyer, ex: Executor) {
-  const [row] = await ex.select({ id: s.orders.id }).from(s.orders).where(and(
-    buyer.userId ? or(eq(s.orders.email, buyer.email), eq(s.orders.userId, buyer.userId)) : eq(s.orders.email, buyer.email),
-    notInArray(s.orders.status, [...NOT_PURCHASED]),
-  )).limit(1);
+/** Any order (paid OR still awaiting payment) by this person. Pending orders count, so parallel checkouts can't stack first-order perks. */
+async function hasOrdered(buyer: Buyer, ex: Executor) {
+  const [row] = await ex.select({ id: s.orders.id }).from(s.orders).where(and(samePerson(buyer), notInArray(s.orders.status, ["cancelled"]))).limit(1);
   return !!row;
 }
 
 /**
  * Validates a coupon or referral code for this buyer and subtotal.
- * Returns the discount (never more than subtotal − ₦1/$1) or an error message.
+ * Codes need a signed-in account; once per person (account, canonical email or phone), pending orders included.
+ * Every failure returns the same message (no oracle for guessing codes). Pass `lock` inside the order transaction.
  */
-export async function applyCode(rawCode: string, buyer: Buyer, currency: Currency, subtotal: number, ex: Executor = db):
+export async function applyCode(rawCode: string, buyer: Buyer, currency: Currency, subtotal: number, ex: Executor = db, lock = false):
   Promise<{ ok: true; applied: Applied } | { ok: false; error: string }> {
+  if (!buyer.userId) return { ok: false, error: "Sign in to use a promo or referral code." };
   const code = rawCode.trim().toUpperCase();
-  if (!/^[A-Z0-9-]{3,32}$/.test(code)) return { ok: false, error: "That code isn’t valid." };
+  const invalid = { ok: false as const, error: CODE_INVALID };
+  if (!/^[A-Z0-9-]{3,32}$/.test(code)) return invalid;
   const cap = (d: number) => Math.max(0, Math.min(d, subtotal - UNIT));
 
-  const [c] = await ex.select().from(s.coupons).where(eq(s.coupons.code, code));
+  const q = ex.select().from(s.coupons).where(eq(s.coupons.code, code));
+  const [c] = lock ? await q.for("update") : await q;
   if (c) {
-    if (!c.active || (c.expiresAt && c.expiresAt < new Date())) return { ok: false, error: "This code has expired." };
-    if (c.maxRedemptions != null && c.redemptions >= c.maxRedemptions) return { ok: false, error: "This code has been fully redeemed." };
-    if (c.userId && c.userId !== buyer.userId) return { ok: false, error: "Sign in to the account this code belongs to." };
+    if (!c.active || (c.expiresAt && c.expiresAt < new Date())) return invalid;
+    if (c.userId && c.userId !== buyer.userId) return invalid;
     const min = currency === "NGN" ? c.minSubtotalNgn : c.minSubtotalUsd;
-    if (min != null && subtotal < min) return { ok: false, error: "Your bag doesn’t meet this code’s minimum yet." };
+    if (min != null && subtotal < min) return invalid;
+    if (c.maxRedemptions != null) {
+      const [{ open }] = await ex.select({ open: sql<number>`count(*)::int` }).from(s.orders)
+        .where(and(eq(s.orders.couponId, c.id), eq(s.orders.status, "pending"), sql`${s.orders.expiresAt} > now()`));
+      if (c.redemptions + open >= c.maxRedemptions) return invalid; // unpaid orders hold a redemption
+    }
     const [used] = await ex.select({ id: s.orders.id }).from(s.orders)
-      .where(and(eq(s.orders.couponId, c.id), eq(s.orders.email, buyer.email), notInArray(s.orders.status, [...NOT_PURCHASED]))).limit(1);
-    if (used) return { ok: false, error: "You’ve already used this code." };
+      .where(and(eq(s.orders.couponId, c.id), samePerson(buyer), notInArray(s.orders.status, ["cancelled"]))).limit(1);
+    if (used) return invalid;
     const raw = c.percentOff != null
       ? Math.floor((subtotal * c.percentOff) / 100 / UNIT) * UNIT
       : (currency === "NGN" ? c.amountOffNgn! : c.amountOffUsd!);
     return { ok: true, applied: { kind: "coupon", couponId: c.id, code, discount: cap(raw) } };
   }
 
-  const [referrer] = await ex.select({ id: s.user.id, email: s.user.email }).from(s.user).where(eq(s.user.referralCode, code));
+  const [referrer] = await ex.select({ id: s.user.id, email: s.user.email, phone: s.user.phone }).from(s.user).where(eq(s.user.referralCode, code));
   if (referrer) {
-    if (referrer.id === buyer.userId || referrer.email.toLowerCase() === buyer.email.toLowerCase())
-      return { ok: false, error: "You can’t use your own referral code." };
-    if (await hasPurchased(buyer, ex)) return { ok: false, error: "Referral codes are for first orders only." };
+    if (subtotal < REFERRAL_MIN_SUBTOTAL[currency]) return invalid;
+    const buyerPhone = phoneKey(buyer.phone);
+    const referrerPhones = [referrer.phone, ...(await ex.select({ phone: s.addresses.phone }).from(s.addresses).where(eq(s.addresses.userId, referrer.id))).map((a) => a.phone)].map(phoneKey);
+    const self = referrer.id === buyer.userId || canonicalEmail(referrer.email) === canonicalEmail(buyer.email) || (buyerPhone.length >= 7 && referrerPhones.includes(buyerPhone));
+    if (self || (await hasOrdered(buyer, ex))) return invalid;
     return { ok: true, applied: { kind: "referral", referrerId: referrer.id, code, discount: cap(REFERRAL_REWARD[currency]) } };
   }
-  return { ok: false, error: "That code isn’t valid." };
+  return invalid;
 }
+
+/** Re-checked when the money arrives: referral rewards only for the buyer's first paid order. */
+export async function isFirstPaidOrder(ex: Executor, order: { id: string; userId: string | null; email: string; shippingAddress: { phone: string } }) {
+  const [other] = await ex.select({ id: s.orders.id }).from(s.orders).where(and(
+    samePerson({ userId: order.userId, email: order.email, phone: order.shippingAddress.phone }),
+    inArray(s.orders.status, [...PAID]), sql`${s.orders.id} <> ${order.id}`,
+  )).limit(1);
+  return !other;
+}
+
+/** Stock hoarding guard: unpaid, unexpired orders this shopper (person or cart) already holds. */
+export async function openOrders(ex: Executor, buyer: Buyer, cartId: string) {
+  const [{ n }] = await ex.select({ n: sql<number>`count(*)::int` }).from(s.orders).where(and(
+    eq(s.orders.status, "pending"), sql`${s.orders.expiresAt} > now()`, or(samePerson(buyer), eq(s.orders.cartId, cartId)),
+  ));
+  return n;
+}
+
+/** Orders delivered in Nigeria are charged in naira; everywhere else in dollars (no currency arbitrage). */
+export const currencyFor = (country: string): Currency => (country === "NG" ? "NGN" : "USD");
 
 /** Aggregate per-variant quantities consumed by these lines. */
 export function stockNeeds(lines: { quantity: number; stock: { variantId: string; quantity: number }[] }[]) {

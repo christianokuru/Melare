@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Jost, Cormorant_Garamond } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ClientShell } from "@/components/providers/client-shell";
+import { Suspense } from "react";
 import { Analytics } from "@/components/analytics";
 import { CookieBanner } from "@/components/cookie-banner";
 import { JsonLd } from "@/components/json-ld";
@@ -34,7 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col bg-background text-[15px] leading-relaxed text-foreground">
         <ClientShell>{children}</ClientShell>
         <Toaster position="top-center" />
-        <Analytics />
+        <Suspense fallback={null}><Analytics /></Suspense>
         <CookieBanner />
         <JsonLd data={{
           "@context": "https://schema.org",

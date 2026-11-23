@@ -11,8 +11,8 @@ export function NewsletterForm({ source = "footer" }: { source?: string }) {
       const form = e.currentTarget;
       const email = String(new FormData(form).get("email") ?? "");
       start(async () => {
-        const r = await subscribe(email, source);
-        setMsg(r.ok ? { ok: true, text: "Welcome to the circle. Check your inbox for 10% off." } : { ok: false, text: r.error });
+        const r = await subscribe(email);
+        setMsg(r.ok ? { ok: true, text: "Almost there: tap the link we just emailed you to confirm and get 10% off." } : { ok: false, text: r.error });
         if (r.ok) form.reset();
       });
     }}>

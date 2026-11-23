@@ -1,6 +1,13 @@
 "use client";
 import Script from "next/script";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useConsent } from "@/lib/consent";
+
+// Pages that carry tokens (reset link, payment reference) or personal data. Analytics never START on them,
+// page views drop query strings, and these pages' content is masked in Clarity (data-clarity-mask on their layouts).
+const PRIVATE = /^\/(admin|account|checkout\/complete|reset-password|forgot-password|sign-in|sign-up|track)(\/|$)/;
+declare global { interface Window { gtag?: (...args: unknown[]) => void } }
 
 // IDs are validated before being placed in inline scripts.
 const GA = /^G-[A-Z0-9]{4,20}$/.test(process.env.NEXT_PUBLIC_GA_ID ?? "") ? process.env.NEXT_PUBLIC_GA_ID : null;
@@ -10,13 +17,26 @@ export const analyticsEnabled = !!(GA || CLARITY || PIXEL);
 
 /** GA4, Microsoft Clarity and Meta Pixel. Nothing loads until the visitor accepts cookies. */
 export function Analytics() {
-  if (useConsent() !== "granted") return null;
+  const consent = useConsent();
+  const path = usePathname();
+  const [started, setStarted] = useState(false);
+  if (!started && consent === "granted" && !PRIVATE.test(path)) setStarted(true); // first public page starts analytics
+
+  // Client navigations: page views without the query string (the first one is sent by the config below, also without it).
+  const first = useRef<string | null>(null);
+  useEffect(() => {
+    if (!started || !GA) return;
+    if (first.current === null) { first.current = path; return; }
+    if (!PRIVATE.test(path)) window.gtag?.("event", "page_view", { page_location: location.origin + path, page_path: path, page_title: document.title });
+  }, [started, path]);
+
+  if (consent !== "granted" || !started) return null;
   return (
     <>
       {GA && (
         <>
           <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA}`} strategy="afterInteractive" />
-          <Script id="ga" strategy="afterInteractive">{`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${GA}');`}</Script>
+          <Script id="ga" strategy="afterInteractive">{`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${GA}',{page_location:location.origin+location.pathname});`}</Script>
         </>
       )}
       {CLARITY && (

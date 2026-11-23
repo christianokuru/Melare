@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Checkout", robots: { index: false, f
 
 export default function CheckoutPage() {
   return (
-    <div className={`${container} pt-8`}>
+    <div className={`${container} pt-8`} data-clarity-mask="True">
       <h1 className="mb-8 font-heading text-[40px] leading-none lg:text-5xl">Checkout</h1>
       <Suspense fallback={<div className="h-96 animate-pulse rounded-2xl bg-sand" />}><Checkout /></Suspense>
     </div>
@@ -44,7 +44,7 @@ async function Checkout() {
   const quote = await quoteCheckout({ country: initial.country, state: initial.state });
   if ("error" in quote) return <p className="text-destructive">{quote.error}</p>;
   return (
-    <CheckoutForm email={session?.user.email ?? null} initial={initial} currency={currency} initialQuote={quote}
-      lines={lines.map((l) => ({ id: l.refId, name: l.name, label: l.label, quantity: l.quantity, total: lineUnit(l, currency) * l.quantity }))} />
+    <CheckoutForm email={session?.user.email ?? null} initial={initial} browsingCurrency={currency} initialQuote={quote}
+      lines={lines.map((l) => ({ id: l.refId, name: l.name, label: l.label, quantity: l.quantity, totalNgn: lineUnit(l, "NGN") * l.quantity, totalUsd: lineUnit(l, "USD") * l.quantity }))} />
   );
 }

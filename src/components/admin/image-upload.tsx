@@ -1,7 +1,6 @@
 "use client";
 import { useRef, useTransition } from "react";
 import { toast } from "sonner";
-import { uploadImage } from "@/app/actions/admin";
 import type { MediaFolder } from "@/lib/media";
 
 const MAX = 4 * 1024 * 1024;
@@ -25,7 +24,8 @@ export function ImageUpload({ value, onChange, folder, name }: { value: string; 
           form.set("file", file);
           form.set("folder", folder);
           start(async () => {
-            const r = await uploadImage(form);
+            const r: { ok: true; url: string } | { ok: false; error: string } = await fetch("/admin/upload", { method: "POST", body: form })
+              .then((res) => res.json()).catch(() => ({ ok: false, error: "Upload failed. Please try again." }));
             if (r.ok) { onChange(r.url); toast.success("Image uploaded"); } else toast.error(r.error);
           });
         }} />

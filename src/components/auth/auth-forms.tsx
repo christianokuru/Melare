@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { authClient, safeNext } from "@/lib/auth-client";
+import { ScrubUrl } from "@/components/scrub-url";
 import { buttonOutline, buttonPrimary, inputClass, labelClass } from "@/components/site/section";
 import { CheckIcon, EyeIcon, EyeOffIcon } from "@/components/site/icons";
 
@@ -176,7 +177,7 @@ export function ForgotPasswordForm() {
 export function ResetPasswordForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const token = params.get("token");
+  const [token] = useState(params.get("token")); // kept in memory; the URL is scrubbed so the token never reaches history or analytics
   const [error, setError] = useState(params.get("error") ? "This reset link is invalid or has expired." : "");
   const [pending, start] = useTransition();
   if (!token) return <Notice tone="error">This reset link is invalid or has expired. <Link href="/forgot-password" className="underline">Request a new one</Link>.</Notice>;
@@ -194,6 +195,7 @@ export function ResetPasswordForm() {
         else router.push("/sign-in?reset=1");
       });
     }}>
+      <ScrubUrl />
       {error && <Notice tone="error">{error}</Notice>}
       <PasswordField id="password" label="New password" autoComplete="new-password" required meter />
       <PasswordField id="confirm" label="Confirm new password" autoComplete="new-password" required />

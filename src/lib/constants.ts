@@ -42,5 +42,8 @@ export const NG_STATES = [
 ];
 
 export const REFERRAL_REWARD = { NGN: 200000, USD: 300 } as const; // minor units
-export const ORDER_PAYMENT_WINDOW_MIN = 60;
+export const REFERRAL_MIN_SUBTOTAL = { NGN: 1000000, USD: 1500 } as const; // ₦10,000 / $15: no near-free referral orders
+export const ORDER_PAYMENT_WINDOW_MIN = 30;
+export const MAX_OPEN_ORDERS = 2; // unpaid orders one shopper may hold at once (stock hoarding)
+export const MAX_ORDER_UNITS = 20;
 export const MAX_LINE_QTY = 10;

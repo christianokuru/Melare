@@ -34,7 +34,9 @@ export default async function OrderPage({ params }: PageProps<"/account/orders/[
         {canBuyAgain && <BuyAgainButton number={o.number} className={buttonOutline} />}
       </div>
       {payable && <RetryPayment number={o.number} />}
-      <OrderView o={{ ...o, currency: o.currency as Currency, address: o.shippingAddress, progress: progressDates(o, events) }} />
+      {/* Guest checkouts linked only by email: whoever typed this email may not be the account owner, so no address/phone here. */}
+      {!o.userId && <p className="mb-6 rounded-xl bg-blush p-4 text-sm">Placed as a guest checkout with your email. Delivery details are hidden for privacy. Contact us if you need them.</p>}
+      <OrderView o={{ ...o, currency: o.currency as Currency, address: o.userId ? o.shippingAddress : undefined, progress: progressDates(o, events) }} />
       {reviewable.length > 0 && (
         <div className="mt-10 rounded-2xl bg-blush p-6 text-sm">
           <p className="font-heading text-xl">How’s your skin loving it?</p>

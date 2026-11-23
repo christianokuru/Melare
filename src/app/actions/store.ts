@@ -2,14 +2,16 @@
 import { z } from "zod";
 import { cookies } from "next/headers";
 import { refresh } from "next/cache";
-import { and, eq, notInArray } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { getSession } from "@/lib/auth";
 import { throttle } from "@/lib/throttle";
 import { CURRENCY_COOKIE } from "@/lib/request";
 import { isCurrency } from "@/lib/money";
 import { CONCERNS, SKIN_TYPES } from "@/lib/constants";
-import { sendEmail, escapeHtml } from "@/lib/email";
+import { sendEmail, escapeHtml, suppress } from "@/lib/email";
+import { confirmSubscribeUrl, verifyEmailToken } from "@/lib/email-tokens";
+import { canonicalEmail } from "@/lib/checkout";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const Email = z.string().trim().toLowerCase().email().max(254);
@@ -21,16 +23,24 @@ export async function setCurrency(currency: string) {
   refresh();
 }
 
-export async function subscribe(email: string, source = "footer"): Promise<Result> {
+/** Newsletter sign-up = double opt-in: we only email a fixed "confirm" message, at most once a week per address. */
+export async function subscribe(email: string): Promise<Result> {
   const e = Email.safeParse(email);
   if (!e.success) return { ok: false, error: "Enter a valid email address." };
   if (!(await throttle("subscribe", 5, 3600))) return LIMITED;
-  const inserted = await db.insert(s.subscribers).values({ email: e.data, source: source.slice(0, 30) }).onConflictDoNothing().returning();
-  if (inserted.length) {
-    await sendEmail(e.data, "Welcome to the Melaré circle", "You’re in",
-      "<p>Thank you for joining the Melaré circle. You’ll be first to hear about launches, restocks and members-only offers.</p><p>Here’s 10% off your first order: <strong>WELCOME10</strong></p>",
-      { label: "Start shopping", url: `${process.env.NEXT_PUBLIC_APP_URL}/shop` });
+  const [already] = await db.select({ email: s.subscribers.email }).from(s.subscribers).where(eq(s.subscribers.email, e.data));
+  if (!already && (await throttle("subscribe-to", 1, 7 * 86400, canonicalEmail(e.data)))) {
+    await sendEmail(e.data, "Confirm your subscription · Melaré", "One tap to join",
+      "<p>Someone (hopefully you) asked to join the Melaré newsletter with this email. Confirm below to get launches, restocks and your 10% welcome code.</p><p style=\"color:#6B5045\">Didn’t ask for this? Ignore this email and you won’t hear from us.</p>",
+      { label: "Confirm subscription", url: confirmSubscribeUrl(e.data) });
   }
+  return { ok: true }; // same answer either way: no email enumeration
+}
+
+export async function unsubscribe(email: string, token: string): Promise<Result> {
+  const e = Email.safeParse(email);
+  if (!e.success || !verifyEmailToken("unsubscribe", e.data, String(token))) return { ok: false, error: "This unsubscribe link has expired." };
+  await suppress(e.data, "link");
   return { ok: true };
 }
 
@@ -41,6 +51,8 @@ export async function notifyWhenInStock(email: string, variantId: string): Promi
   if (!(await throttle("stock-alert", 10, 3600))) return LIMITED;
   const [variant] = await db.select({ id: s.productVariants.id }).from(s.productVariants).where(eq(s.productVariants.id, v.data));
   if (!variant) return { ok: false, error: "Product not found." };
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(s.stockAlerts).where(eq(s.stockAlerts.email, e.data));
+  if (n >= 20) return { ok: false, error: "You’re already waiting on lots of products. We’ll email you when they’re back." };
   await db.insert(s.stockAlerts).values({ email: e.data, variantId: v.data }).onConflictDoNothing();
   return { ok: true };
 }
@@ -113,11 +125,11 @@ export async function submitQuiz(input: z.input<typeof QuizInput>): Promise<Resu
   const picked = products.map((p) => ({ p, sc: score(p) })).filter((x) => x.sc > 0).sort((x, y) => y.sc - x.sc).slice(0, size).map((x) => x.p);
   const session = await getSession(); // signed-in shoppers keep this as their skin profile
   await db.insert(s.quizResults).values({ userId: session?.user.id ?? null, email: a.email || null, answers: a, productIds: picked.map((p) => p.id) });
-  if (a.email) {
-    await db.insert(s.subscribers).values({ email: a.email, source: "quiz" }).onConflictDoNothing();
+  // Fixed-content email, max once a day per address, unsubscribe-able; joining the newsletter still needs a confirm tap.
+  if (a.email && (await throttle("quiz-to", 1, 86400, canonicalEmail(a.email)))) {
     await sendEmail(a.email, "Your Melaré routine", "Your routine, made for your skin",
-      `<p>Based on your answers (${escapeHtml(a.skinType)} skin), we recommend:</p><ul>${picked.map((p) => `<li>${escapeHtml(p.slug.replace(/-/g, " "))}</li>`).join("")}</ul>`,
-      { label: "Shop my routine", url: `${process.env.NEXT_PUBLIC_APP_URL}/quiz/results?p=${picked.map((p) => p.slug).join(",")}` });
+      `<p>Based on your answers (${escapeHtml(a.skinType)} skin), we recommend:</p><ul>${picked.map((p) => `<li>${escapeHtml(p.slug.replace(/-/g, " "))}</li>`).join("")}</ul><p>Want launches and 10% off your first order? <a href="${confirmSubscribeUrl(a.email)}">Join the newsletter</a>.</p>`,
+      { label: "Shop my routine", url: `${process.env.NEXT_PUBLIC_APP_URL}/quiz/results?p=${picked.map((p) => p.slug).join(",")}` }, { marketing: true });
   }
   return { ok: true, slugs: picked.map((p) => p.slug) };
 }

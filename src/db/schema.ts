@@ -213,6 +213,13 @@ export const subscribers = pgTable("subscribers", {
   createdAt,
 });
 
+/** Addresses that unsubscribed (or turned marketing off): no marketing email is ever sent to them. Stored lowercase. */
+export const emailSuppressions = pgTable("email_suppressions", {
+  email: text("email").primaryKey(),
+  reason: text("reason").notNull(),
+  createdAt,
+});
+
 export const stockAlerts = pgTable("stock_alerts", {
   email: text("email").notNull(),
   variantId: text("variant_id").notNull().references(() => productVariants.id, { onDelete: "cascade" }),

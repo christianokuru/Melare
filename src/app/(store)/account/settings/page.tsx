@@ -10,6 +10,7 @@ export const instant = false;
 export default async function SettingsPage() {
   const { user } = await requireUser("/account/settings");
   const [subscribed] = await db.select({ email: s.subscribers.email }).from(s.subscribers).where(sql`lower(${s.subscribers.email}) = ${user.email.toLowerCase()}`);
+  // Off = unsubscribed from everything optional (newsletter + reminders).
   return (
     <div className="grid gap-10">
       <Link href="/account/addresses" className="flex max-w-xl items-center justify-between rounded-2xl border p-5 text-sm hover:bg-blush lg:hidden">

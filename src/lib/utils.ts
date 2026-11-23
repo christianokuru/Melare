@@ -10,3 +10,7 @@ export function randomCode(length: number) {
 
 export const slugify = (s: string) =>
   s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+
+/** Real-looking names only (letters, spaces, ' . -; 2–80 chars): no links or "@", so names can't carry phishing text into emails. */
+export const PERSON_NAME = /^(?!.*\.\S)[\p{L}\p{M}][\p{L}\p{M} '.-]{1,79}$/u // a dot must end a word ("Jr."), so no domains
+export const cleanName = (name: unknown) => String(name ?? "").trim().replace(/\s+/g, " ")

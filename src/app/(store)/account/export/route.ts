@@ -2,12 +2,14 @@ import { desc, eq, inArray, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { getSession } from "@/lib/auth";
 import { ownedBy } from "@/lib/account";
+import { throttle } from "@/lib/throttle";
 
 /** "Download my data" (NDPA / GDPR access request): everything we hold about the signed-in customer, as JSON. */
 export async function GET() {
   const session = await getSession();
   if (!session) return new Response("Please sign in", { status: 401 });
   const { user } = session;
+  if (!(await throttle("export", 5, 3600, user.id))) return new Response("Too many downloads. Try again in an hour.", { status: 429 });
   const email = user.email.toLowerCase();
   const [profile, addresses, orders, reviews, wishlist, quiz, subscribed, codes] = await Promise.all([
     db.select({ name: s.user.name, email: s.user.email, phone: s.user.phone, referralCode: s.user.referralCode, joined: s.user.createdAt }).from(s.user).where(eq(s.user.id, user.id)),
@@ -28,7 +30,9 @@ export async function GET() {
     addresses: addresses.map(({ userId: _u, ...a }) => a),
     orders: orders.map((o) => ({
       number: o.number, status: o.status, placed: o.createdAt, currency: o.currency, subtotal: o.subtotal / 100, delivery: o.shippingFee / 100,
-      discount: o.discount / 100, total: o.total / 100, shippingAddress: o.shippingAddress, trackingNumber: o.trackingNumber,
+      discount: o.discount / 100, total: o.total / 100, trackingNumber: o.trackingNumber,
+      // Guest checkouts linked by email only: don't hand out someone else's address/phone.
+      shippingAddress: o.userId ? o.shippingAddress : { city: o.shippingAddress.city, country: o.shippingAddress.country, note: "guest checkout: details hidden" },
       items: items.filter((i) => i.orderId === o.id).map((i) => ({ name: i.name, option: i.label, quantity: i.quantity, unitPrice: i.unitPrice / 100 })),
     })),
     reviews, favourites: wishlist, skinQuiz: quiz, rewardCodes: codes,

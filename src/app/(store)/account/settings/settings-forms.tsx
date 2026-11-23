@@ -71,7 +71,7 @@ function Privacy({ marketing }: { marketing: boolean }) {
           setSubscribed(next);
           start(async () => { if (!toastResult(await setMarketingEmails(next), next ? "You’re subscribed to offers" : "You won’t get marketing emails")) setSubscribed(!next); });
         }} />
-        <span>Email me offers, launches and skincare tips.<span className="block text-muted-foreground">Order updates are always sent.</span></span>
+        <span>Email me offers, launches, restock and reorder reminders.<span className="block text-muted-foreground">Order updates are always sent.</span></span>
       </label>
       <div className="text-sm">
         <p className="mb-2">Get a copy of everything we hold about you: profile, addresses, orders, reviews and quiz answers.</p>

@@ -12,8 +12,7 @@ import { SETTINGS_TAG, type SettingKey } from "@/lib/settings";
 import { sendEmail, escapeHtml, APP_URL } from "@/lib/email";
 import { CONCERNS, SKIN_TYPES } from "@/lib/constants";
 import { randomCode, slugify } from "@/lib/utils";
-import { isMediaUrl, MEDIA_FOLDERS } from "@/lib/media";
-import { storeImage, UploadError } from "@/lib/storage";
+import { isMediaUrl } from "@/lib/media";
 import { throttle } from "@/lib/throttle";
 
 type Result = { ok: true; id?: string } | { ok: false; error: string };
@@ -28,22 +27,6 @@ function done(id?: string): Result {
   updateTag(CATALOG_TAG);
   refresh();
   return { ok: true, id };
-}
-
-/* ───────────── Image uploads (Neon Object Storage) ───────────── */
-export async function uploadImage(form: FormData): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  const session = await requireAdmin();
-  if (!(await throttle("upload", 60, 3600, session.user.id))) return { ok: false, error: "Too many uploads. Try again later." };
-  const file = form.get("file");
-  const folder = z.enum(MEDIA_FOLDERS).safeParse(form.get("folder"));
-  if (!(file instanceof File) || !folder.success) return { ok: false, error: "Choose an image to upload." };
-  try {
-    return { ok: true, url: await storeImage(Buffer.from(await file.arrayBuffer()), folder.data) };
-  } catch (e) {
-    if (e instanceof UploadError) return { ok: false, error: e.message };
-    console.error("[upload]", e);
-    return { ok: false, error: "Upload failed. Please try again." };
-  }
 }
 
 /* ───────────── Products ───────────── */
@@ -113,7 +96,7 @@ async function sendRestockAlerts(variantIds: string[]) {
     .innerJoin(s.products, eq(s.products.id, s.productVariants.productId)).where(inArray(s.stockAlerts.variantId, variantIds));
   await Promise.allSettled(rows.map((r) => sendEmail(r.email, `${r.name} is back in stock`, "It’s back",
     `<p>Good news: <strong>${escapeHtml(r.name)} (${escapeHtml(r.label)})</strong> is back in stock. Popular items sell out quickly.</p>`,
-    { label: "Shop now", url: `${APP_URL}/products/${r.slug}` })));
+    { label: "Shop now", url: `${APP_URL}/products/${r.slug}` }, { marketing: true })));
   await db.delete(s.stockAlerts).where(inArray(s.stockAlerts.variantId, variantIds));
 }
 

@@ -16,7 +16,7 @@ export function AuthShell({ title, subtitle, image, alt, children }: {
         </div>
       </div>
       <div className="relative -mt-6 flex justify-center rounded-t-3xl bg-background px-5 pt-9 pb-14 lg:order-1 lg:mt-0 lg:items-center lg:rounded-none lg:px-[6vw] lg:py-16">
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-md" data-clarity-mask="True">
           <p className="eyebrow mb-3 text-muted-foreground">Melaré account</p>
           <h1 className="font-heading text-[40px] leading-none lg:text-[52px]">{title}</h1>
           <p className="mt-3 mb-8 text-muted-foreground">{subtitle}</p>

@@ -5,6 +5,8 @@ import { PAID_STATUSES } from "@/lib/order-status";
 import { expireStaleOrders } from "@/lib/checkout";
 import { getCartLines } from "@/lib/cart";
 import { sendEmail, escapeHtml, APP_URL } from "@/lib/email";
+import { canonicalEmail } from "@/lib/checkout";
+import { throttle } from "@/lib/throttle";
 
 const DAY = 86_400_000;
 
@@ -31,9 +33,10 @@ export async function GET(req: Request) {
     const [recent] = await db.select({ id: s.orders.id }).from(s.orders)
       .where(and(eq(s.orders.cartId, c.id), gt(s.orders.createdAt, c.updatedAt), notInArray(s.orders.status, ["pending", "cancelled"]))).limit(1);
     if (recent) continue;
+    if (!(await throttle("bag-reminder-to", 1, DAY / 1000, canonicalEmail(c.email!)))) continue; // max one per address per day, across carts
     await sendEmail(c.email!, "You left something beautiful behind", "Your bag is waiting",
       `<p>Your Melaré favourites are still in your bag:</p><ul>${lines.map((l) => `<li>${escapeHtml(l.name)} · ${escapeHtml(l.label)}</li>`).join("")}</ul><p>Popular items sell out, so complete your order while they’re in stock.</p>`,
-      { label: "Return to my bag", url: `${APP_URL}/cart` });
+      { label: "Return to my bag", url: `${APP_URL}/cart` }, { marketing: true });
     await db.update(s.carts).set({ remindersSent: sql`${s.carts.remindersSent} + 1`, lastRemindedAt: new Date() }).where(eq(s.carts.id, c.id));
     report.abandoned++;
   }
@@ -49,7 +52,7 @@ export async function GET(req: Request) {
   for (const d of due) {
     await sendEmail(d.email, `Running low on ${d.name}?`, "Time for a top-up?",
       `<p>Based on your last order, your <strong>${escapeHtml(d.name)}</strong> is probably running low. Reorder now so your routine never skips a day.</p>`,
-      { label: "Reorder", url: `${APP_URL}/products/${d.slug}` });
+      { label: "Reorder", url: `${APP_URL}/products/${d.slug}` }, { marketing: true });
     await db.update(s.orderItems).set({ reminderSentAt: new Date() }).where(eq(s.orderItems.id, d.itemId));
     report.reorder++;
   }

@@ -14,7 +14,7 @@ const FAQ: [string, string][] = [
   ["How can I pay?", "We accept cards, bank transfer and USSD through Flutterwave for naira orders, and international cards for dollar orders. We never see or store your card details."],
   ["Can I return a product?", "Unopened products can be returned within 14 days of delivery. If a product causes a reaction, contact us and we’ll help."],
   ["How do I track my order?", "Use the tracking link in your confirmation email, visit Track order, or see all your orders in your account."],
-  ["How does the referral programme work?", "Share your code from your account. Your friend gets ₦2,000 ($3) off their first order, and you get the same as a reward once they’ve paid."],
+  ["How does the referral programme work?", "Share your code from your account. Your friend signs in and gets ₦2,000 ($3) off their first order of ₦10,000 ($15) or more, and you get the same as a reward once they’ve paid."],
 ];
 
 export default function FaqPage() {

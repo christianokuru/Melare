@@ -4,7 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import type { Currency } from "./money";
 import { formatMoney } from "./money";
-import { OutOfStockError, lockOrder, logOrderEvent, reserveStock, stockNeeds } from "./checkout";
+import { OutOfStockError, isFirstPaidOrder, lockOrder, logOrderEvent, reserveStock, stockNeeds } from "./checkout";
 import { pushToAdmin } from "./push";
 import { sendEmail, escapeHtml, APP_URL } from "./email";
 import { REFERRAL_REWARD } from "./constants";
@@ -120,9 +120,17 @@ export async function settlePayment(tx: FlwTransaction): Promise<SettleResult> {
       await t.update(s.orders).set({ status: "paid", paidAt: new Date() }).where(eq(s.orders.id, order.id));
       await logOrderEvent(t, order.id, "paid", order.status === "cancelled" ? "Payment confirmed after the payment window" : "Payment confirmed");
       if (order.couponId) {
-        await t.update(s.coupons).set({ redemptions: sql`${s.coupons.redemptions} + 1` }).where(eq(s.coupons.id, order.couponId));
+        const [c] = await t.update(s.coupons).set({ redemptions: sql`${s.coupons.redemptions} + 1` }).where(eq(s.coupons.id, order.couponId))
+          .returning({ code: s.coupons.code, redemptions: s.coupons.redemptions, max: s.coupons.maxRedemptions });
+        if (c?.max != null && c.redemptions > c.max) { // only possible for payments after expiry; the customer already paid, so flag it
+          await logOrderEvent(t, order.id, "paid", `Code ${c.code} is now over its limit (${c.redemptions}/${c.max})`);
+          alerts.push(() => alertAdmin(`Code over its limit · ${order.number}`, `${c.code} has been redeemed ${c.redemptions} times (limit ${c.max}).`, `/admin/orders/${order.id}`));
+        }
       }
-      if (order.referrerId) {
+      // Referral rewards only for the referred person's FIRST paid order (re-checked now that money has arrived).
+      if (order.referrerId && !(await isFirstPaidOrder(t, order))) {
+        await logOrderEvent(t, order.id, "paid", "Referral reward not issued: not the buyer’s first order");
+      } else if (order.referrerId) {
         const code = `THANKS-${randomCode(6)}`;
         await t.insert(s.coupons).values({
           code, userId: order.referrerId, amountOffNgn: REFERRAL_REWARD.NGN, amountOffUsd: REFERRAL_REWARD.USD, maxRedemptions: 1,
@@ -141,11 +149,11 @@ export async function settlePayment(tx: FlwTransaction): Promise<SettleResult> {
   return result;
 }
 
-/** Emails the admin and pushes to their devices. */
-export async function alertAdmin(subject: string, text: string, path = "/admin/orders") {
+/** Emails the admin (full details) and pushes to their devices (no customer details: lock screens are visible to others). */
+export async function alertAdmin(subject: string, text: string, path = "/admin/orders", pushBody = "Open the dashboard for details.") {
   await Promise.allSettled([
     process.env.ADMIN_EMAIL && sendEmail(process.env.ADMIN_EMAIL, subject, subject, `<p>${escapeHtml(text)}</p>`, { label: "Open dashboard", url: `${APP_URL}${path}` }),
-    pushToAdmin({ title: subject, body: text, url: path }),
+    pushToAdmin({ title: subject, body: pushBody, url: path }),
   ]);
 }
 
@@ -163,7 +171,8 @@ ${o.discount ? `<tr><td style="color:#6B5045">Discount</td><td align="right">−
     sendEmail(o.email, `Order ${o.number} confirmed · Melaré`, "Thank you for your order",
       `<p>We’ve received your payment and we’re getting your order ready. Order number: <strong>${o.number}</strong>.</p>${table}<p style="color:#6B5045">Estimated delivery: ${escapeHtml(o.shippingZone)}.</p>`,
       { label: "View order", url }),
-    alertAdmin(`New order ${o.number} · ${formatMoney(o.total, c)}`, `${o.email} paid ${formatMoney(o.total, c)} for ${items.length} item(s). Ship to ${o.shippingAddress.city}, ${o.shippingAddress.state}, ${o.shippingAddress.country}.`, `/admin/orders/${o.id}`),
+    alertAdmin(`New order ${o.number} · ${formatMoney(o.total, c)}`, `${o.email} paid ${formatMoney(o.total, c)} for ${items.length} item(s). Ship to ${o.shippingAddress.city}, ${o.shippingAddress.state}, ${o.shippingAddress.country}.`, `/admin/orders/${o.id}`,
+      `${items.reduce((n, i) => n + i.quantity, 0)} item(s) · tap to view and ship`),
   ]);
 }
 

@@ -5,6 +5,8 @@ import { and, count, eq, ne, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { getSession } from "@/lib/auth";
 import { throttle } from "@/lib/throttle";
+import { suppress, unsuppress } from "@/lib/email";
+import { cleanName, PERSON_NAME } from "@/lib/utils";
 import { COUNTRIES } from "@/lib/constants";
 import type { Currency } from "@/lib/money";
 
@@ -17,9 +19,11 @@ export async function setMarketingEmails(subscribed: boolean): Promise<Result> {
   const session = await getSession();
   if (!session) return UNAUTH;
   if (!(await throttle("marketing", 20, 3600, session.user.id))) return { ok: false, error: "Too many changes. Try again later." };
-  const email = session.user.email.toLowerCase();
-  if (subscribed) await db.insert(s.subscribers).values({ email, source: "account" }).onConflictDoNothing();
-  else await db.delete(s.subscribers).where(sql`lower(${s.subscribers.email}) = ${email}`);
+  const email = session.user.email.toLowerCase(); // verified account email: no double opt-in needed
+  if (subscribed) {
+    await unsuppress(email);
+    await db.insert(s.subscribers).values({ email, source: "account" }).onConflictDoNothing();
+  } else await suppress(email, "account"); // also stops bag/reorder/restock reminders
   refresh();
   return { ok: true };
 }
@@ -27,7 +31,7 @@ export async function setMarketingEmails(subscribed: boolean): Promise<Result> {
 export async function updateProfile(input: { name: string; phone: string }): Promise<Result> {
   const session = await getSession();
   if (!session) return UNAUTH;
-  const parsed = z.object({ name: z.string().trim().min(2).max(80), phone: z.union([phone, z.literal("")]) }).safeParse(input);
+  const parsed = z.object({ name: z.string().transform(cleanName).pipe(z.string().regex(PERSON_NAME, "Please enter your name using letters only (2–80 characters).")), phone: z.union([phone, z.literal("")]) }).safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   await db.update(s.user).set({ name: parsed.data.name, phone: parsed.data.phone || null }).where(eq(s.user.id, session.user.id));
   refresh();
@@ -58,6 +62,7 @@ export async function saveAddress(input: z.input<typeof AddressInput>): Promise<
   const values = { ...d, line2: d.line2 || null, postalCode: d.postalCode || null };
   try {
   await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`addresses:${uid}`}))`); // parallel saves can't beat the 10-address cap
     const [{ n }] = await tx.select({ n: count() }).from(s.addresses).where(eq(s.addresses.userId, uid));
     let savedId = id;
     if (id) {
