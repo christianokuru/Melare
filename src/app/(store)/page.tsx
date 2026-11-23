@@ -36,29 +36,24 @@ const fadeUp = "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-
 export default function Home() {
   return (
     <>
-      {/* Hero: arch-framed portrait, shoppable card, compact on phones so the CTA shows without scrolling */}
-      <section className="overflow-hidden bg-petal">
-        <div className="mx-auto grid w-full max-w-[1240px] items-center gap-6 px-4 pt-6 pb-10 lg:min-h-[min(calc(100svh-120px),820px)] lg:grid-cols-[1.1fr_1fr] lg:gap-12 lg:px-10 lg:py-16">
-          <div className="relative order-1 mx-auto w-[min(50vw,230px)] lg:order-2 lg:w-full lg:max-w-[440px]">
-            <span className="absolute -inset-2.5 rounded-t-[999px] rounded-b-[34px] border border-gold/50 lg:-inset-4 lg:rounded-b-[40px]" aria-hidden />
-            <div className="relative aspect-[4/5] overflow-hidden rounded-t-[999px] rounded-b-[26px] bg-[#c9946b] shadow-[0_40px_70px_-35px_rgba(59,36,24,0.45)]">
-              <Image src={media("site/hero-studio.webp")} alt="Woman with glowing brown skin and soft curls in a cream linen suit, against a warm caramel backdrop" fill priority
-                sizes="(min-width:1024px) 440px, 50vw" className="object-cover motion-safe:animate-hero-zoom" />
-            </div>
-            <div className="max-lg:hidden"><Suspense fallback={null}><HeroProduct floating /></Suspense></div>
-          </div>
+      {/* Hero: text left, full-bleed product photo filling the right half (on top on phones, short enough to keep the CTA in view) */}
+      <section className="grid bg-petal lg:min-h-[min(calc(100svh-120px),820px)] lg:grid-cols-2">
+        <div className="relative order-1 h-[41svh] min-h-[260px] overflow-hidden lg:order-2 lg:h-auto">
+          <Image src={media("site/hero-serum.webp")} alt="Blush-pink serum dropper on soft stone blocks with a dried flower and ribbed glass" fill priority
+            sizes="(min-width:1024px) 50vw, 100vw" className="object-cover object-[50%_12%] motion-safe:animate-hero-zoom lg:object-[50%_6%]" />
+          <div className="absolute bottom-8 left-8 max-lg:hidden"><Suspense fallback={null}><HeroProduct floating /></Suspense></div>
+        </div>
 
-          <div className={`order-2 text-center lg:order-1 lg:text-left ${fadeUp}`}>
-            <NewPill />
-            <h1 className="mt-4 font-heading text-[44px] leading-[0.98] sm:text-6xl lg:mt-6 lg:text-[96px] lg:leading-[0.95]">Skin, but <em className="text-[#8A6623]">rarer.</em></h1>
-            <p className="mx-auto mt-4 max-w-md text-[15px] lg:mx-0 lg:mt-6 lg:max-w-lg lg:text-lg">Gentle, effective formulas that fade dark spots, even tone and bring out your natural glow, without harshness or bleaching.</p>
-            <div className="mt-5 flex justify-center gap-3 lg:mt-8 lg:justify-start">
-              <Link href="/shop" className={`${buttonPrimary} max-sm:flex-1 max-sm:px-4`}><span className="sm:hidden">Shop now</span><span className="max-sm:hidden">Shop bestsellers</span></Link>
-              <Link href="/quiz" className={`${buttonOutline} max-sm:flex-1 max-sm:px-4`}><span className="sm:hidden">Skin quiz</span><span className="max-sm:hidden">Take the skin quiz</span></Link>
-            </div>
-            <ProofLine />
-            <div className="mx-auto mt-6 max-w-[340px] lg:hidden"><Suspense fallback={null}><HeroProduct /></Suspense></div>
+        <div className={`order-2 flex flex-col justify-center px-5 py-7 text-center lg:order-1 lg:px-[8vw] lg:py-16 lg:text-left ${fadeUp}`}>
+          <div><NewPill /></div>
+          <h1 className="mt-4 font-heading text-[44px] leading-[0.98] sm:text-6xl lg:mt-6 lg:text-[76px] lg:leading-[0.95] 2xl:text-[92px]">Skin, but <em className="text-[#8A6623]">rarer.</em></h1>
+          <p className="mx-auto mt-4 max-w-md text-[15px] lg:mx-0 lg:mt-6 lg:max-w-lg lg:text-lg">Gentle, effective formulas that fade dark spots, even tone and bring out your natural glow, without harshness or bleaching.</p>
+          <div className="mt-5 flex justify-center gap-3 lg:mt-8 lg:justify-start">
+            <Link href="/shop" className={`${buttonPrimary} max-sm:flex-1 max-sm:px-4`}><span className="sm:hidden">Shop now</span><span className="max-sm:hidden">Shop bestsellers</span></Link>
+            <Link href="/quiz" className={`${buttonOutline} max-sm:flex-1 max-sm:px-4`}><span className="sm:hidden">Skin quiz</span><span className="max-sm:hidden">Take the skin quiz</span></Link>
           </div>
+          <ProofLine />
+          <div className="mx-auto mt-6 w-full max-w-[340px] lg:hidden"><Suspense fallback={null}><HeroProduct /></Suspense></div>
         </div>
       </section>
 
@@ -198,13 +193,13 @@ async function ProofLine() {
   );
 }
 
-/** Shoppable bestseller card: floats on the hero image (desktop) or sits under the CTAs (phones, so they stay above the fold). */
+/** Shoppable bestseller card: floats on the hero photo (desktop) or sits under the CTAs (phones, so they stay above the fold). */
 async function HeroProduct({ floating }: { floating?: boolean }) {
   const [currency, products] = await Promise.all([getCurrency(), getProducts({ featured: true })]);
   const p = products.find((x) => x.inStock && x.defaultVariantId) ?? products[0];
   if (!p?.defaultVariantId) return null;
   return (
-    <div className={`flex items-center gap-3 rounded-2xl bg-background/85 p-2.5 shadow-lg backdrop-blur-md ${floating ? "absolute -bottom-8 -left-14 w-[310px]" : "w-full"}`}>
+    <div className={`flex items-center gap-3 rounded-2xl bg-background/85 p-2.5 shadow-lg backdrop-blur-md ${floating ? "w-[310px]" : "w-full"}`}>
       <Link href={`/products/${p.slug}`} className="relative size-14 shrink-0 overflow-hidden rounded-xl bg-sand"><Image src={p.image} alt="" fill sizes="56px" className="object-cover" /></Link>
       <Link href={`/products/${p.slug}`} className="min-w-0 flex-1 text-left">
         <span className="eyebrow block text-[10px] text-muted-foreground">Bestseller</span>
