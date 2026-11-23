@@ -30,6 +30,7 @@ const INGREDIENTS = [
   { name: "Ceramides + shea butter", text: "Rebuild and protect your barrier for lasting, comfortable hydration.", href: "/concerns/dryness" },
   { name: "Marula, baobab & rosehip oils", text: "Nourishing African botanicals for a healthy, lit-from-within glow.", href: "/concerns/dullness" },
 ];
+const BENEFITS = ["Fades dark spots", "No bleaching", "Gentle daily"];
 const fadeUp = "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-4 motion-safe:duration-700 motion-safe:fill-mode-both";
 
 export default function Home() {
@@ -37,30 +38,25 @@ export default function Home() {
     <>
       {/* Hero: arch-framed portrait, shoppable card, compact on phones so the CTA shows without scrolling */}
       <section className="overflow-hidden bg-petal">
-        <div className={`${container} grid items-center gap-6 pt-6 pb-10 lg:min-h-[calc(100svh-120px)] lg:grid-cols-2 lg:gap-16 lg:py-14`}>
-          <div className="relative order-1 mx-auto w-[min(50vw,230px)] lg:order-2 lg:w-full lg:max-w-[500px]">
+        <div className="mx-auto grid w-full max-w-[1240px] items-center gap-6 px-4 pt-6 pb-10 lg:min-h-[min(calc(100svh-120px),820px)] lg:grid-cols-[1.1fr_1fr] lg:gap-12 lg:px-10 lg:py-16">
+          <div className="relative order-1 mx-auto w-[min(50vw,230px)] lg:order-2 lg:w-full lg:max-w-[440px]">
             <span className="absolute -inset-2.5 rounded-t-[999px] rounded-b-[34px] border border-gold/50 lg:-inset-4 lg:rounded-b-[40px]" aria-hidden />
-            <div className="relative aspect-[4/5] overflow-hidden rounded-t-[999px] rounded-b-[26px] bg-white shadow-[0_40px_70px_-35px_rgba(59,36,24,0.45)]">
-              <Image src={media("site/hero-glow.webp")} alt="Woman with radiant, glowing deep brown skin in a cream head wrap and gold hoops" fill priority
-                sizes="(min-width:1024px) 500px, 50vw" className="object-cover object-[50%_32%] motion-safe:animate-hero-zoom" />
+            <div className="relative aspect-[4/5] overflow-hidden rounded-t-[999px] rounded-b-[26px] bg-[#c9946b] shadow-[0_40px_70px_-35px_rgba(59,36,24,0.45)]">
+              <Image src={media("site/hero-studio.webp")} alt="Woman with glowing brown skin and soft curls in a cream linen suit, against a warm caramel backdrop" fill priority
+                sizes="(min-width:1024px) 440px, 50vw" className="object-cover motion-safe:animate-hero-zoom" />
             </div>
             <div className="max-lg:hidden"><Suspense fallback={null}><HeroProduct floating /></Suspense></div>
           </div>
 
           <div className={`order-2 text-center lg:order-1 lg:text-left ${fadeUp}`}>
             <NewPill />
-            <h1 className="mt-4 font-heading text-[44px] leading-[0.98] sm:text-6xl lg:mt-6 lg:text-[84px]">Skin, but <em className="text-[#8A6623]">rarer.</em></h1>
-            <p className="mx-auto mt-4 max-w-md text-[15px] lg:mx-0 lg:mt-5 lg:text-lg">Gentle, effective formulas that fade dark spots, even tone and bring out your natural glow, without harshness or bleaching.</p>
+            <h1 className="mt-4 font-heading text-[44px] leading-[0.98] sm:text-6xl lg:mt-6 lg:text-[96px] lg:leading-[0.95]">Skin, but <em className="text-[#8A6623]">rarer.</em></h1>
+            <p className="mx-auto mt-4 max-w-md text-[15px] lg:mx-0 lg:mt-6 lg:max-w-lg lg:text-lg">Gentle, effective formulas that fade dark spots, even tone and bring out your natural glow, without harshness or bleaching.</p>
             <div className="mt-5 flex justify-center gap-3 lg:mt-8 lg:justify-start">
               <Link href="/shop" className={`${buttonPrimary} max-sm:flex-1 max-sm:px-4`}><span className="sm:hidden">Shop now</span><span className="max-sm:hidden">Shop bestsellers</span></Link>
               <Link href="/quiz" className={`${buttonOutline} max-sm:flex-1 max-sm:px-4`}><span className="sm:hidden">Skin quiz</span><span className="max-sm:hidden">Take the skin quiz</span></Link>
             </div>
-            <ul className="mt-5 flex flex-wrap justify-center gap-2 lg:justify-start">
-              {["Fades dark spots", "No bleaching", "Gentle for daily use"].map((b) => (
-                <li key={b} className="flex items-center gap-1.5 rounded-full bg-background/70 px-3 py-1.5 text-xs"><span className="text-gold" aria-hidden>✦</span>{b}</li>
-              ))}
-            </ul>
-            <RatingLine />
+            <ProofLine />
             <div className="mx-auto mt-6 max-w-[340px] lg:hidden"><Suspense fallback={null}><HeroProduct /></Suspense></div>
           </div>
         </div>
@@ -191,14 +187,14 @@ async function NewPill() {
   );
 }
 
-/** Real social proof only: hidden until there are approved reviews. */
-async function RatingLine() {
+/** One quiet line under the CTAs: real rating (only once there are approved reviews) + key benefits. */
+async function ProofLine() {
   const { avg, count } = await getReviewHighlights();
-  if (!count) return null;
   return (
-    <a href="#reviews" className="mt-5 inline-flex items-center gap-2 text-sm">
-      <Stars rating={avg} /> <span><strong>{avg.toFixed(1)}</strong> from {count} verified review{count === 1 ? "" : "s"}</span>
-    </a>
+    <p className="mt-5 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[13px] text-muted-foreground lg:mt-6 lg:justify-start">
+      {count > 0 && <a href="#reviews" className="flex items-center gap-1.5 text-foreground hover:underline underline-offset-4"><Stars rating={avg} size={13} /><strong>{avg.toFixed(1)}</strong><span className="sr-only"> from {count} reviews</span></a>}
+      {BENEFITS.map((b) => <span key={b} className="flex items-center gap-2.5 before:text-gold before:content-['·'] first:before:hidden">{b}</span>)}
+    </p>
   );
 }
 
