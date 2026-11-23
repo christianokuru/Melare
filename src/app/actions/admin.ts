@@ -415,8 +415,13 @@ export async function savePushSubscription(input: z.input<typeof PushInput>): Pr
   if (!parsed.success) return { ok: false, error: "This browser’s push subscription isn’t supported." };
   if (!(await throttle("push-sub", 20, 3600, session.user.id))) return { ok: false, error: "Too many attempts. Try again later." };
   const { endpoint, keys } = parsed.data;
-  await db.insert(s.pushSubscriptions).values({ endpoint, userId: session.user.id, ...keys })
-    .onConflictDoUpdate({ target: s.pushSubscriptions.endpoint, set: { userId: session.user.id, ...keys } });
+  try {
+    await db.insert(s.pushSubscriptions).values({ endpoint, userId: session.user.id, ...keys })
+      .onConflictDoUpdate({ target: s.pushSubscriptions.endpoint, set: { userId: session.user.id, ...keys } });
+  } catch (e) {
+    console.error("[push] save failed", e);
+    return { ok: false, error: "Couldn’t save this device. Run `npm run db:push` (new tables), restart the server and try again." };
+  }
   return { ok: true };
 }
 

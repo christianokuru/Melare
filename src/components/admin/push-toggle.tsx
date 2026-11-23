@@ -7,9 +7,18 @@ import { adminButton, adminGhost } from "./ui";
 
 type State = "loading" | "unsupported" | "denied" | "off" | "on";
 
+/** VAPID public key → bytes. Returns null unless it's a valid 65-byte P-256 public key. */
 const toKey = (b64: string) => {
-  const raw = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  try {
+    const clean = b64.trim().replace(/^["']|["']$/g, "");
+    const raw = atob((clean + "=".repeat((4 - (clean.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+    const key = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+    return key.length === 65 && key[0] === 4 ? key : null;
+  } catch { return null; }
+};
+const sameKey = (sub: PushSubscription, key: Uint8Array) => {
+  const k = sub.options.applicationServerKey ? new Uint8Array(sub.options.applicationServerKey) : null;
+  return !!k && k.length === key.length && k.every((b, i) => b === key[i]);
 };
 const registration = () => navigator.serviceWorker.register("/sw.js").then(() => navigator.serviceWorker.ready);
 
@@ -28,16 +37,25 @@ export function PushToggle({ publicKey }: { publicKey: string }) {
   }, []);
 
   const enable = () => start(async () => {
+    const key = toKey(publicKey);
+    if (!key) return void toast.error("NEXT_PUBLIC_VAPID_PUBLIC_KEY looks wrong. Paste the “Public Key” from npx web-push generate-vapid-keys (no quotes), then restart the server.");
     if ((await Notification.requestPermission()) !== "granted") return void setState("denied");
+    let step = "registering the service worker";
     try {
       const reg = await registration();
-      const sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKey(publicKey) });
+      step = "subscribing with your browser’s push service";
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && !sameKey(sub, key)) { await sub.unsubscribe(); sub = null; } // made with an old key
+      sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      step = "saving this device";
       const r = await savePushSubscription(sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } });
       if (!r.ok) { await sub.unsubscribe(); return void toast.error(r.error); }
       setState("on");
       toast.success("New-order alerts are on for this device");
-    } catch {
-      toast.error("Couldn’t turn on notifications in this browser.");
+    } catch (e) {
+      console.error("[push]", step, e);
+      const why = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      toast.error(`Couldn’t turn on alerts while ${step}. ${why}`, { duration: 15000 });
     }
   });
 
