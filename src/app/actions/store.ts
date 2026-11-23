@@ -27,12 +27,21 @@ export async function setCurrency(currency: string) {
 export async function subscribe(email: string): Promise<Result> {
   const e = Email.safeParse(email);
   if (!e.success) return { ok: false, error: "Enter a valid email address." };
+  try {
+    return await startSubscription(e.data);
+  } catch (err) {
+    console.error("[subscribe]", err instanceof Error ? (err.cause ?? err.message) : err);
+    return { ok: false, error: "We couldn’t sign you up right now. Please try again in a moment." };
+  }
+}
+
+async function startSubscription(email: string): Promise<Result> {
   if (!(await throttle("subscribe", 5, 3600))) return LIMITED;
-  const [already] = await db.select({ email: s.subscribers.email }).from(s.subscribers).where(eq(s.subscribers.email, e.data));
-  if (!already && (await throttle("subscribe-to", 1, 7 * 86400, canonicalEmail(e.data)))) {
-    await sendEmail(e.data, "Confirm your subscription · Melaré", "One tap to join",
+  const [already] = await db.select({ email: s.subscribers.email }).from(s.subscribers).where(eq(s.subscribers.email, email));
+  if (!already && (await throttle("subscribe-to", 1, 7 * 86400, canonicalEmail(email)))) {
+    await sendEmail(email, "Confirm your subscription · Melaré", "One tap to join",
       "<p>Someone (hopefully you) asked to join the Melaré newsletter with this email. Confirm below to get launches, restocks and your 10% welcome code.</p><p style=\"color:#6B5045\">Didn’t ask for this? Ignore this email and you won’t hear from us.</p>",
-      { label: "Confirm subscription", url: confirmSubscribeUrl(e.data) });
+      { label: "Confirm subscription", url: confirmSubscribeUrl(email) });
   }
   return { ok: true }; // same answer either way: no email enumeration
 }
