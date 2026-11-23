@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq, inArray, like, sql } from "drizzle-orm";
 
-vi.mock("web-push", () => ({ default: { setVapidDetails: vi.fn(), sendNotification: vi.fn() } }));
-import webpush from "web-push";
+vi.mock("web-push", () => ({ setVapidDetails: vi.fn(), sendNotification: vi.fn() }));
+import * as webpush from "web-push";
 import { db, schema as s } from "@/db";
 import { isPushEndpoint, pushToAdmin } from "@/lib/push";
 import { reviewPrompts, runningLow } from "@/lib/account";
