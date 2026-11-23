@@ -11,6 +11,7 @@ import { OrderView, progressDates } from "@/components/order/order-view";
 import { OrderTimeline } from "@/components/admin/order-timeline";
 import { Table, td, adminGhost } from "@/components/admin/ui";
 import { OrderStatusForm } from "./status-form";
+import { PROVIDER_NAME, type Provider } from "@/lib/gateways";
 
 // Fresh admin check on every request, so this route blocks rather than prefetching.
 export const instant = false;
@@ -40,8 +41,8 @@ export default async function AdminOrder({ params }: PageProps<"/admin/orders/[i
         {o.note && <p className="mb-6 rounded-xl bg-[#fbf3e3] p-4 text-sm">⚠ {o.note}</p>}
         <OrderView o={{ ...o, currency: c, items, address: a, progress: progressDates(o, events) }} />
         <h2 className="mt-10 mb-3 font-heading text-2xl">Payments</h2>
-        <Table head={["Reference", "Flutterwave ID", "Status", "Amount", "Created"]}>
-          {payments.map((p) => <tr key={p.id}><td className={td}>{p.reference}</td><td className={td}>{p.transactionId ?? "-"}</td><td className={td}>{p.status}</td><td className={td}>{formatMoney(p.amount, p.currency as Currency)}</td><td className={td}>{p.createdAt.toLocaleString("en-GB")}</td></tr>)}
+        <Table head={["Reference", "Gateway", "Gateway ID", "Status", "Amount", "Created"]}>
+          {payments.map((p) => <tr key={p.id}><td className={td}>{p.reference}</td><td className={td}>{PROVIDER_NAME[p.provider as Provider] ?? p.provider}</td><td className={td}>{p.transactionId ?? "-"}</td><td className={td}>{p.status}</td><td className={td}>{formatMoney(p.amount, p.currency as Currency)}</td><td className={td}>{p.createdAt.toLocaleString("en-GB")}</td></tr>)}
         </Table>
       </div>
       <div className="grid h-fit gap-6 xl:sticky xl:top-6">

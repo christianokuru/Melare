@@ -1,7 +1,7 @@
 "use server";
 import { z } from "zod";
 import { redirect } from "next/navigation";
-import { count, eq } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { getSession } from "@/lib/auth";
 import { getCartLines, resolveCartId } from "@/lib/cart";
@@ -12,7 +12,7 @@ import {
   applyCode, currencyFor, expireStaleOrders, lineUnit, lockBuyer, logOrderEvent, openOrders, OutOfStockError, releaseOrderStock, reserveStock, shippingFee, stockNeeds, subtotalOf, zoneFor,
   type Applied, type Buyer,
 } from "@/lib/checkout";
-import { createPaymentLink } from "@/lib/payments";
+import { providersFor, startPayment, type Provider } from "@/lib/gateways";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const Address = z.object({
@@ -29,11 +29,13 @@ const CheckoutInput = Address.and(z.object({
   email: z.string().trim().toLowerCase().email().max(254),
   code: z.string().trim().max(32).optional().default(""),
   saveAddress: z.boolean().optional().default(false),
+  provider: z.enum(["paystack", "flutterwave"]).optional(),
 }));
 
 export type Quote = {
   currency: "NGN" | "USD"; subtotal: number; discount: number; shipping: number; total: number;
   zone: string | null; eta: string | null; codeError?: string; codeApplied?: string;
+  providers: Provider[]; // gateways that can charge this currency, preferred first
 };
 
 async function buyerFor(email: string, phone?: string): Promise<Buyer> {
@@ -60,7 +62,7 @@ export async function quoteCheckout(input: { country: string; state: string; cod
   }
   const zone = await zoneFor(country, input.state);
   const shipping = zone && subtotal > 0 ? shippingFee(zone, currency, subtotal - discount) : 0;
-  return { currency, subtotal, discount, shipping, total: subtotal - discount + shipping, zone: zone?.name ?? null, eta: zone?.eta ?? null, codeError, codeApplied };
+  return { currency, subtotal, discount, shipping, total: subtotal - discount + shipping, zone: zone?.name ?? null, eta: zone?.eta ?? null, codeError, codeApplied, providers: providersFor(currency) };
 }
 
 export async function placeOrder(input: z.input<typeof CheckoutInput>): Promise<{ error: string; fields?: Record<string, string> }> {
@@ -74,6 +76,9 @@ export async function placeOrder(input: z.input<typeof CheckoutInput>): Promise<
   const session = await getSession();
   const buyer = await buyerFor(d.email, d.phone);
   const currency = currencyFor(d.country);
+  const available = providersFor(currency);
+  const provider = d.provider ?? available[0];
+  if (!provider || !available.includes(provider)) return { error: "That payment method isn’t available for this order. Please choose another." };
   await expireStaleOrders();
 
   const cartId = await resolveCartId();
@@ -117,7 +122,7 @@ export async function placeOrder(input: z.input<typeof CheckoutInput>): Promise<
         name: l.name, label: l.label, image: l.image, unitPrice: lineUnit(l, currency), quantity: l.quantity,
         stock: l.stock.map((st) => ({ variantId: st.variantId, quantity: st.quantity * l.quantity })),
       })));
-      await tx.insert(s.payments).values({ orderId: o.id, reference, amount: total, currency });
+      await tx.insert(s.payments).values({ orderId: o.id, provider, reference, amount: total, currency });
       await logOrderEvent(tx, o.id, "pending", "Order placed, awaiting payment");
       return o;
     });
@@ -129,7 +134,7 @@ export async function placeOrder(input: z.input<typeof CheckoutInput>): Promise<
 
   let link: string;
   try {
-    link = await createPaymentLink({ reference, amount: order.total, currency, email: buyer.email, name: d.fullName, phone: d.phone });
+    link = await startPayment(provider, { reference, amount: order.total, currency, email: buyer.email, name: d.fullName, phone: d.phone });
   } catch (e) {
     console.error("[checkout] payment link failed", e);
     await db.transaction(async (tx) => {
@@ -162,11 +167,16 @@ export async function retryPayment(orderNumber: string): Promise<{ error: string
   const owns = o && ((session && o.userId === session.user.id) || (!o.userId && cartId && o.cartId === cartId));
   if (!o || !owns) return { error: "Order not found." };
   if (o.status !== "pending" || o.expiresAt < new Date()) return { error: "This order can no longer be paid. Please place a new order." };
+  const currency = o.currency as "NGN" | "USD";
+  const available = providersFor(currency);
+  const [last] = await db.select({ provider: s.payments.provider }).from(s.payments).where(eq(s.payments.orderId, o.id)).orderBy(desc(s.payments.createdAt)).limit(1);
+  const provider = available.find((p) => p === last?.provider) ?? available[0]; // stay on the gateway they chose
+  if (!provider) return { error: "Payments are temporarily unavailable. Please try again later." };
   const reference = `${o.number}-${randomCode(6)}`;
-  await db.insert(s.payments).values({ orderId: o.id, reference, amount: o.total, currency: o.currency });
+  await db.insert(s.payments).values({ orderId: o.id, provider, reference, amount: o.total, currency });
   let link: string;
   try {
-    link = await createPaymentLink({ reference, amount: o.total, currency: o.currency as "NGN" | "USD", email: o.email, name: o.shippingAddress.fullName, phone: o.shippingAddress.phone });
+    link = await startPayment(provider, { reference, amount: o.total, currency, email: o.email, name: o.shippingAddress.fullName, phone: o.shippingAddress.phone });
   } catch {
     return { error: "We couldn’t connect to our payment partner. Please try again in a moment." };
   }

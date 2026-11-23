@@ -325,14 +325,15 @@ export const orderItems = pgTable("order_items", {
 export const payments = pgTable("payments", {
   id: id(),
   orderId: text("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
-  reference: text("reference").notNull().unique(), // tx_ref sent to Flutterwave
-  transactionId: text("transaction_id").unique(),
+  provider: text("provider").default("flutterwave").notNull(), // "paystack" | "flutterwave": the gateway this reference was opened on
+  reference: text("reference").notNull().unique(), // our reference, sent to the gateway
+  transactionId: text("transaction_id"), // the gateway's own id (unique per gateway)
   status: paymentStatus("status").default("initiated").notNull(),
   amount: integer("amount").notNull(),
   currency: text("currency").notNull(),
   raw: jsonb("raw"),
   createdAt, updatedAt,
-}, (t) => [index("payments_order_idx").on(t.orderId)]);
+}, (t) => [index("payments_order_idx").on(t.orderId), uniqueIndex("payments_provider_tx_idx").on(t.provider, t.transactionId)]);
 
 /** Order timeline shown to the admin and the customer. */
 export const orderEvents = pgTable("order_events", {

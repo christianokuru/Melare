@@ -15,7 +15,7 @@ export function OrderStatusForm({ id, status, trackingNumber, note }: { id: stri
     <form className="h-fit rounded-2xl border bg-white p-5" onSubmit={async (e) => {
       e.preventDefault();
       const f = new FormData(e.currentTarget);
-      if ((next === "cancelled" || next === "refunded") && !(await confirm(`Mark this order as ${STATUS_LABEL[next].toLowerCase()}? Remember to refund the payment in your Flutterwave dashboard.`, `Mark ${STATUS_LABEL[next].toLowerCase()}`))) return;
+      if ((next === "cancelled" || next === "refunded") && !(await confirm(`Mark this order as ${STATUS_LABEL[next].toLowerCase()}? Remember to refund the payment in your Paystack or Flutterwave dashboard.`, `Mark ${STATUS_LABEL[next].toLowerCase()}`))) return;
       start(async () => {
         const r = await updateOrder({ id, status: next as "paid", trackingNumber: String(f.get("tracking")), note: String(f.get("note")), restock });
         toastResult(r, "Order updated");
@@ -36,7 +36,7 @@ export function OrderStatusForm({ id, status, trackingNumber, note }: { id: stri
       <textarea id="o-note" name="note" defaultValue={note} maxLength={500} rows={3} className={`${adminInput} h-auto py-2`} />
       <button type="submit" disabled={pending} className={`${adminButton} mt-4 w-full`}>{pending ? "Saving…" : "Save"}</button>
       {confirmDialog}
-      <p className="mt-3 text-xs text-muted-foreground">Customers are emailed when an order is shipped, delivered, cancelled or refunded. Refunds must be issued in your Flutterwave dashboard.</p>
+      <p className="mt-3 text-xs text-muted-foreground">Customers are emailed when an order is shipped, delivered, cancelled or refunded. Refunds must be issued in the Paystack or Flutterwave dashboard (see Payments).</p>
     </form>
   );
 }

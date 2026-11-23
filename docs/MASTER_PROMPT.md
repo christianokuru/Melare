@@ -13,7 +13,7 @@ You are building a production e-commerce website for me as a **senior software e
 - **Inspiration site (scroll the whole page, study layout, then adapt, don't copy):** {{INSPIRATION_URL}}
 - **Mood to adapt the design into:** {{MOOD}} (e.g. "soft, girly, minimalist, luxurious")
 - **Currencies:** {{CURRENCIES}} (default: NGN + USD, customer toggles; separate price per currency, no FX conversion)
-- **Payment provider:** {{PAYMENT}} (default: Flutterwave only)
+- **Payment providers:** {{PAYMENT}} (default: Paystack + Flutterwave, customer picks at checkout)
 - **Admin email (env var only, never in code):** set by me as `ADMIN_EMAIL`
 - **GitHub repo:** {{OWNER/REPO}}
 - **Domain / sending email:** {{DOMAIN}} (emails via Resend from `{{brand}}@mail.kylva.com` unless the client has a domain)
@@ -69,7 +69,10 @@ On the first message, **only scaffold**; do not write features yet:
 - **Better Auth**: email/password with **required email verification**, optional Google, DB-backed rate limits, `nextCookies()` last.
 - **Neon Postgres + Drizzle** with the **`neon-serverless` Pool** (WebSocket) for real transactions and `SELECT … FOR UPDATE`. Create the Neon project via MCP if needed (region near users, e.g. `aws-eu-central-1` + Vercel `fra1`).
 - **Neon Object Storage** for all images (public_read bucket). Server-side uploads: `requireAdmin` → sharp validates real image (≥400px, ≤4 MB, JPG/PNG/WebP/AVIF) → strip EXIF/GPS → resize ≤1800px → WebP → random key → `Cache-Control: immutable`. S3 client needs `forcePathStyle: true` and `requestChecksumCalculation: "WHEN_REQUIRED"`. Env names: `NEON_STORAGE_*` + `NEXT_PUBLIC_MEDIA_URL` (**Vercel reserves `AWS_*`**). Validate stored image URLs belong to our bucket.
-- **Payments:** Flutterwave Standard (NGN: card/transfer/USSD; USD: card). (Paystack/Stripe only if I ask.)
+- **Payments:** Paystack + Flutterwave behind one gateway module (`src/lib/gateways.ts`: `providersFor`, `startPayment`, `verifyPayment`). Hosted/redirect checkout only, server-side secret keys, no public key in the browser. Paystack first for NGN (card/transfer/USSD/bank); USD via Flutterwave unless `PAYSTACK_CURRENCIES` includes USD. Picker shows only when >1 gateway can charge the currency. (Stripe only if I ask.)
+  - Every payment row stores its `provider`; settle only if reference + provider + status + currency + exact integer minor-unit amount all match. A gateway's transaction never settles another gateway's reference.
+  - Webhooks: Paystack = HMAC-SHA512 of the RAW body with the secret key (`x-paystack-signature`, constant-time, 64 KB cap); Flutterwave = `verif-hash`. Then IGNORE the body: re-verify by OUR reference (`PAYMENT_REF` regex) with the gateway API, settle idempotently under row locks. Non-`charge.*` events ignored. DB errors → 500 so the gateway retries.
+  - Callback page reads `tx_ref` (Flutterwave) or `reference` (Paystack), but picks the gateway from OUR DB row, never the URL. Reject hosted URLs not on `checkout.paystack.com`. Amounts must be `typeof number` (strings/decimals never match).
 - **Email:** Resend REST (logs links to console when no key). Shared verified subdomain `mail.kylva.com`, one API key per project.
 - **Lenis** smooth scroll (respect reduced motion). **PWA**: manifest, icons, service worker (never cache api/account/admin/checkout/cart), offline page.
 - **Zod** on every input. **Vitest** + **Playwright**. `@types/node` must satisfy peers (use `^22`). **Never `--legacy-peer-deps`**; fix the conflict so `npm install` works cleanly on my machine.
@@ -168,13 +171,14 @@ Home, shop, category, concern/need, product, bundles (list + detail), cart, chec
 - **Dashboard E2E** with a temporary seed script (orders in different states, reward code, subscriber, quiz result, abandoned cart; deleted afterwards): admin lands on `/admin`, badges, range switch, chart, phone search, tab counts, bulk update, CSV export contents, order timeline, cancel confirm dialog, packing slip hides sidebar in print, inline stock edit, duplicate + image reorder, customer page, abandoned bags, settings (invalid WhatsApp rejected, banner shows on storefront); customer: tracker, running low/review prompts/skin profile/rewards, tab bar + WhatsApp button above it, Buy again → bag, marketing toggle, data export JSON, delete account (wrong password rejected, then deleted, orders kept). 390px pages have no horizontal scroll.
 - **Security probes:** webhook/cron without secret → 401, admin as guest/customer → 404, open redirect blocked, wrong password, triple-tap add-to-bag.
 - **Security regression suite** (`tests/security.test.ts` + payments tests): open-redirect payloads, signed email links (wrong address/purpose/forged/expired), canonical email + phone identity, currency by country, name validation, unpaid-order cap; codes: guest blocked, one generic error, once per person incl. aliases/phone/pending orders, parallel checkouts (only one succeeds), referral min spend/self/first-order, reward only on first paid order. Browser probes: phishing name rejected (also via `/api/auth/update-user`), forged unsubscribe → 400, cross-origin upload → 403, payment page masks email + scrubs URL, no analytics on the reset page but present on /shop, reset token still usable after URL scrub, guests can't use codes, currency switch note, sign-out-everywhere kills other sessions instantly, newsletter needs the confirm link, unsubscribe suppresses. Prod build: 0 CSP violations with SRI.
+- **Gateway suite** (`tests/paystack.test.ts`, fake API via stubbed `fetch`, throwaway `sk_test_` key): signature (attacker key, tampered body, sha256, bad hex/length, no secret → reject), route 401/413 before any API call, body never trusted (abandoned on verify → stays pending), replay/parallel → paid once, underpay/wrong currency/decimal/string amount/other reference → not paid, cross-gateway → not paid, non-charge events + injection-style references → no API call, exact kobo + callback on init, foreign hosted URL rejected, USD/public-key-as-secret not offered.
 - Screenshots of key pages (mobile + desktop, plus a 2560px check for admin) and review them visually. Run dev mode and navigate (store, admin, account) to catch Next.js Suspense/instant-navigation insights; there must be none.
 - Push can't complete in a sandbox without push-service access: unit-test the server, then ask me to test on my device.
 
 ## Deliverables
 - Code pushed to `main`; `README.md` (setup, scripts, go-live checklist), `ARCHITECTURE.md` (stack, structure, data model, security model, flows, SEO, tests), complete `.env.example`.
 - Seed script with realistic catalogue, bundles, shipping zones, welcome coupon.
-- Final message: env vars I must set in Vercel (`NEXT_PUBLIC_APP_URL` = `BETTER_AUTH_URL` = site URL; localhost locally), Flutterwave webhook URL + hash, Resend key + `EMAIL_FROM`, analytics IDs, VAPID keys (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT=mailto:<my email>`) with how to test alerts (laptop Chrome/Edge; Android Chrome; iPhone only from the Home Screen icon), and what still needs real keys to verify.
+- Final message: env vars I must set in Vercel (`NEXT_PUBLIC_APP_URL` = `BETTER_AUTH_URL` = site URL; localhost locally), Paystack webhook `/api/webhooks/paystack` + callback `/checkout/complete` + `PAYSTACK_SECRET_KEY`, Flutterwave webhook URL + hash, Resend key + `EMAIL_FROM`, analytics IDs, VAPID keys (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT=mailto:<my email>`) with how to test alerts (laptop Chrome/Edge; Android Chrome; iPhone only from the Home Screen icon), and what still needs real keys to verify.
 
 ## Known pitfalls (avoid repeating)
 - Next 16 keeps previous routes mounted (hidden): scope Playwright selectors to `:visible`.
@@ -182,7 +186,7 @@ Home, shop, category, concern/need, product, bundles (list + detail), cart, chec
 - `redirect()` inside streamed Suspense content may not fire: render an empty state instead.
 - Better Auth sign-up doesn't reveal existing emails: tests should try sign-in first.
 - Restart the prod server by **port** (`fuser -k 3000/tcp`) after rebuilding.
-- Flutterwave: one webhook URL per business; one Flutterwave business per project (clients use their own accounts).
+- Paystack: one login can hold many businesses, each with its own keys + webhook (switch business before copying keys!). Flutterwave: one account per business. Either way, clients use their own accounts and invite me as Developer.
 - Flutterwave's **test** checkout (`checkout-v2.dev-flutterwave.com`) is sometimes blocked by *their* Cloudflare for everyone; it's not our site. Verify with live keys, a hidden ₦100 product, then refund.
 - `Registration failed - push service error` = the browser can't reach its push service: Brave needs "Use Google services for push messaging"; VPNs/ad-block DNS can block `fcm.googleapis.com`. Push UI must show the exact step + error, and log with `console.warn` (not `error`, to avoid the dev overlay).
 - Better Auth sign-in rate limit (8 per 5 min) trips during E2E: clear `rate_limit`/`throttle` between runs.

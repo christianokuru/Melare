@@ -3,6 +3,7 @@ import { eq, inArray, like } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { applyCode, canonicalEmail, CODE_INVALID, expireStaleOrders, lockBuyer, releaseOrderStock, reserveStock, OutOfStockError } from "@/lib/checkout";
 import { settlePayment } from "@/lib/payments";
+import type { VerifiedTx } from "@/lib/gateways";
 import { randomCode } from "@/lib/utils";
 
 const TAG = `TEST-${randomCode(5)}`;
@@ -40,8 +41,8 @@ async function makeOrder(opts: { qty?: number; total?: number; expired?: boolean
 
 const stockOf = async () => (await db.select().from(s.productVariants).where(eq(s.productVariants.id, variantId)))[0].stock;
 const orderOf = async (id: string) => (await db.select().from(s.orders).where(eq(s.orders.id, id)))[0];
-const tx = (reference: string, over: Partial<{ status: string; amount: number; currency: string }> = {}) =>
-  ({ id: Math.floor(Math.random() * 1e9), tx_ref: reference, status: "successful", amount: 10000, currency: "NGN", ...over });
+const tx = (reference: string, over: Partial<VerifiedTx> = {}): VerifiedTx =>
+  ({ provider: "flutterwave", id: String(Math.floor(Math.random() * 1e9)), reference, status: "successful", amount: 1000000, currency: "NGN", ...over });
 
 beforeEach(async () => { variantId = await makeVariant(5); });
 
@@ -74,7 +75,7 @@ describe("stock reservation", () => {
 describe("settlePayment", () => {
   it("rejects an amount mismatch and keeps the order unpaid", async () => {
     const { order, reference } = await makeOrder();
-    const r = await settlePayment(tx(reference, { amount: 100 }));
+    const r = await settlePayment(tx(reference, { amount: 10000 }));
     expect(r.status).toBe("mismatch");
     expect((await orderOf(order.id)).status).toBe("pending");
     const [p] = await db.select().from(s.payments).where(eq(s.payments.reference, reference));
@@ -140,7 +141,7 @@ describe("payment window expiry", () => {
     const { order, reference } = await makeOrder({ expired: true, qty: 5 });
     await expireStaleOrders();
     await db.update(s.productVariants).set({ stock: 0 }).where(eq(s.productVariants.id, variantId));
-    await settlePayment(tx(reference, { amount: 50000 }));
+    await settlePayment(tx(reference, { amount: 5000000 }));
     const o = await orderOf(order.id);
     expect(o.status).toBe("paid");
     expect(o.note).toMatch(/stock ran out/);

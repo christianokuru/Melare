@@ -60,6 +60,7 @@ describe("push notifications", () => {
     const customer = await makeUser("customer");
     process.env.ADMIN_EMAIL = admin.email;
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||= "test"; // pushEnabled() reads the module constant; keys exist in .env.local
+    process.env.VAPID_PRIVATE_KEY = "test"; // web-push is mocked here; setup.ts removes the real key so other tests never push
     const keys = { p256dh: "k".repeat(87), auth: "a".repeat(22) };
     await db.insert(s.pushSubscriptions).values([
       { endpoint: `https://fcm.googleapis.com/fcm/send/${TAG}-live`, userId: admin.id, ...keys },
@@ -117,10 +118,10 @@ describe("order timeline", () => {
     const order = await makeOrder({ userId: u.id, email: u.email, status: "pending" });
     const reference = `${order.number}-${randomCode(6)}`;
     await db.insert(s.payments).values({ orderId: order.id, reference, amount: order.total, currency: "NGN" });
-    const r = await settlePayment({ id: Math.floor(Math.random() * 1e9), tx_ref: reference, status: "successful", amount: order.total / 100, currency: "NGN" });
+    const r = await settlePayment({ provider: "flutterwave", id: String(Math.floor(Math.random() * 1e9)), reference, status: "successful", amount: order.total, currency: "NGN" });
     expect(r.status).toBe("paid");
     const events = await db.select().from(s.orderEvents).where(eq(s.orderEvents.orderId, order.id));
-    expect(events.map((e) => [e.status, e.message])).toEqual([["paid", "Payment confirmed"]]);
+    expect(events.map((e) => [e.status, e.message])).toEqual([["paid", "Payment confirmed (Flutterwave)"]]);
     await db.delete(s.orderEvents).where(inArray(s.orderEvents.orderId, [order.id]));
   });
 });

@@ -8,6 +8,8 @@ import { track } from "@/lib/track";
 import { buttonPrimary, inputClass, labelClass } from "@/components/site/section";
 import { cn } from "@/lib/utils";
 
+const PROVIDER_LABEL = { paystack: "Paystack", flutterwave: "Flutterwave" } as const;
+
 type Addr = { fullName: string; phone: string; line1: string; line2: string; city: string; state: string; country: string; postalCode: string };
 type Props = {
   email: string | null;
@@ -22,6 +24,7 @@ export function CheckoutForm({ email, initial, lines, browsingCurrency, initialQ
   const [buyerEmail, setBuyerEmail] = useState(email ?? "");
   const [code, setCode] = useState("");
   const [quote, setQuote] = useState<Quote>(initialQuote);
+  const [picked, setPicked] = useState<Quote["providers"][number] | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState("");
   const [pending, start] = useTransition();
@@ -30,6 +33,7 @@ export function CheckoutForm({ email, initial, lines, browsingCurrency, initialQ
 
   // Charged in the delivery country's currency (Nigeria → ₦, elsewhere → $); the quote says which.
   const currency = quote.currency;
+  const provider = picked && quote.providers.includes(picked) ? picked : quote.providers[0]; // currency change can remove a gateway
   const lineTotal = (l: Props["lines"][number]) => (currency === "NGN" ? l.totalNgn : l.totalUsd);
   const refresh = useCallback((next: { country: string; state: string; code?: string }) => startQuote(async () => {
     const q = await quoteCheckout({ ...next, phone: addr.phone });
@@ -56,8 +60,8 @@ export function CheckoutForm({ email, initial, lines, browsingCurrency, initialQ
     e.preventDefault();
     setFormError("");
     start(async () => {
-      const r = await placeOrder({ ...addr, email: buyerEmail, code: quote.codeApplied ?? "", saveAddress: !!email });
-      // On success the server redirects to Flutterwave; we only get here on errors.
+      const r = await placeOrder({ ...addr, email: buyerEmail, code: quote.codeApplied ?? "", saveAddress: !!email, provider });
+      // On success the server redirects to the gateway's hosted page; we only get here on errors.
       if (r?.error) { setFormError(r.error); setErrors(r.fields ?? {}); window.scrollTo({ top: 0, behavior: "smooth" }); }
     });
   };
@@ -139,8 +143,22 @@ export function CheckoutForm({ email, initial, lines, browsingCurrency, initialQ
           <div className="flex justify-between"><dt>Delivery {quote.zone && <span className="text-muted-foreground">({quote.zone}, {quote.eta})</span>}</dt><dd>{quote.shipping === 0 ? "Free" : formatMoney(quote.shipping, currency)}</dd></div>
           <div className="mt-2 flex justify-between border-t pt-3 text-base"><dt>Total</dt><dd>{formatMoney(quote.total, currency)}</dd></div>
         </dl>
-        <button type="submit" disabled={pending || quoting} className={cn(buttonPrimary, "mt-6 w-full")}>{pending ? "Securing your order…" : `Pay ${formatMoney(quote.total, currency)}`}</button>
-        <p className="mt-3 text-center text-xs text-muted-foreground">You’ll complete payment securely with Flutterwave: {currency === "NGN" ? "card, bank transfer or USSD" : "card"}. Items are reserved for 30 minutes.</p>
+        {quote.providers.length > 1 && (
+          <fieldset className="mt-6">
+            <legend className={labelClass}>Pay with</legend>
+            <div className="grid grid-cols-2 gap-2">
+              {quote.providers.map((p) => (
+                <label key={p} className={cn("flex h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm transition-colors has-focus-visible:ring-2 has-focus-visible:ring-ring",
+                  provider === p ? "border-foreground bg-foreground text-background" : "border-foreground/20 hover:border-foreground")}>
+                  <input type="radio" name="provider" value={p} checked={provider === p} onChange={() => setPicked(p)} className="sr-only" />
+                  {PROVIDER_LABEL[p]}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
+        <button type="submit" disabled={pending || quoting || !provider} className={cn(buttonPrimary, "mt-6 w-full")}>{pending ? "Securing your order…" : `Pay ${formatMoney(quote.total, currency)}`}</button>
+        <p className="mt-3 text-center text-xs text-muted-foreground">{provider ? `You’ll complete payment securely with ${PROVIDER_LABEL[provider]}: ${currency === "NGN" ? "card, bank transfer or USSD" : "card"}. Items are reserved for 30 minutes.` : "Payments are temporarily unavailable. Please try again shortly."}</p>
       </aside>
     </form>
   );

@@ -10,6 +10,7 @@ import { buttonPrimary, container } from "@/components/site/section";
 import { CartLineRow } from "@/components/cart/cart-line";
 import { ProductGrid, GridSkeleton } from "@/components/product/product-grid";
 import { cn } from "@/lib/utils";
+import { providerNames } from "@/lib/gateways";
 
 export const metadata: Metadata = { title: "Your bag", robots: { index: false, follow: true } };
 
@@ -66,7 +67,7 @@ async function Bag() {
         </dl>
         <Link href="/checkout" aria-disabled={blocked} className={cn(buttonPrimary, "mt-6 w-full", blocked && "pointer-events-none opacity-40")}>Checkout securely</Link>
         {blocked && <p className="mt-2 text-xs text-destructive">Update the highlighted items to continue.</p>}
-        <p className="mt-4 text-center text-xs text-muted-foreground">Pay by card, bank transfer or USSD · Secured by Flutterwave</p>
+        <p className="mt-4 text-center text-xs text-muted-foreground">Pay by card, bank transfer or USSD · Secured by {providerNames()}</p>
         <p className="mt-2 text-center text-xs text-muted-foreground">Have a promo or referral code? Add it at checkout.</p>
       </aside>
     </div>

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
-import { settlePayment, verifyByReference } from "@/lib/payments";
+import { settlePayment } from "@/lib/payments";
+import { PAYMENT_REF, verifyPayment, type Provider } from "@/lib/gateways";
 import { throttle } from "@/lib/throttle";
 import { formatMoney, type Currency } from "@/lib/money";
 import { buttonOutline, buttonPrimary, container } from "@/components/site/section";
@@ -22,15 +23,17 @@ export default function CompletePage({ searchParams }: PageProps<"/checkout/comp
 }
 
 async function Result({ searchParams }: { searchParams: PageProps<"/checkout/complete">["searchParams"] }) {
-  const raw = (await searchParams).tx_ref;
-  const ref = typeof raw === "string" && /^MLR-[A-Z0-9]{8}-[A-Z0-9]{6}$/.test(raw) ? raw : null;
+  const q = await searchParams;
+  const raw = q.tx_ref ?? q.reference; // Flutterwave: tx_ref · Paystack: reference (and trxref)
+  const ref = typeof raw === "string" && PAYMENT_REF.test(raw) ? raw : null;
   const [payment] = ref ? await db.select().from(s.payments).where(eq(s.payments.reference, ref)) : [];
   if (!payment) return <Message title="We couldn’t find that payment" body="If you were charged, don’t worry: you’ll receive a confirmation email shortly. Otherwise, please try again from your bag." />;
 
   // Verify server-to-server (the redirect's own status parameter is ignored), but only while the payment is still open
-  // and within a per-IP budget, so reloading/hammering this URL can't burn our Flutterwave API quota.
+  // and within a per-IP budget, so reloading/hammering this URL can't burn our gateway API quota.
+  // The gateway is taken from OUR record of the payment, never from the URL.
   const open = payment.status !== "success" && (await throttle("verify-pay", 30, 600)); // a failed attempt can still succeed on retry
-  const tx = open ? await verifyByReference(payment.reference) : null;
+  const tx = open ? await verifyPayment(payment.provider as Provider, payment.reference) : null;
   const result = tx ? await settlePayment(tx) : { status: payment.status === "success" ? "paid" : payment.status === "failed" ? "failed" : "pending" as const };
   const [order] = await db.select().from(s.orders).where(eq(s.orders.id, payment.orderId));
   const c = order.currency as Currency;

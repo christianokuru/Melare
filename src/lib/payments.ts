@@ -1,5 +1,4 @@
 import "server-only";
-import { timingSafeEqual } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import type { Currency } from "./money";
@@ -9,70 +8,20 @@ import { pushToAdmin } from "./push";
 import { sendEmail, escapeHtml, APP_URL } from "./email";
 import { REFERRAL_REWARD } from "./constants";
 import { randomCode } from "./utils";
-
-const FLW = "https://api.flutterwave.com/v3";
-const flwHeaders = () => ({ Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`, "Content-Type": "application/json" });
-
-export type FlwTransaction = { id: number; tx_ref: string; status: string; amount: number; currency: string };
-
-/** Creates a Flutterwave hosted checkout link. Amount is in minor units. */
-export async function createPaymentLink(p: {
-  reference: string; amount: number; currency: Currency; email: string; name: string; phone: string;
-}) {
-  if (!process.env.FLW_SECRET_KEY) throw new Error("Payments are not configured");
-  const res = await fetch(`${FLW}/payments`, {
-    method: "POST",
-    headers: flwHeaders(),
-    signal: AbortSignal.timeout(15000),
-    body: JSON.stringify({
-      tx_ref: p.reference,
-      amount: p.amount / 100,
-      currency: p.currency,
-      redirect_url: `${APP_URL}/checkout/complete`,
-      payment_options: p.currency === "NGN" ? "card,banktransfer,ussd" : "card",
-      session_duration: 60,
-      max_retry_attempt: 5,
-      customer: { email: p.email, name: p.name, phonenumber: p.phone },
-      // Flutterwave fetches the logo publicly, so only send it on a real https domain (never localhost).
-      customizations: { title: "Melare", description: "Skin, but rarer.", ...(APP_URL.startsWith("https://") && { logo: `${APP_URL}/icon-512.png` }) },
-    }),
-  });
-  const json = await res.json().catch(() => null);
-  if (!res.ok || json?.status !== "success" || typeof json?.data?.link !== "string") {
-    throw new Error(json?.message ?? `Flutterwave error ${res.status}`);
-  }
-  return json.data.link as string;
-}
-
-/** Server-to-server lookup by OUR reference. Never trust redirect query params. */
-export async function verifyByReference(reference: string): Promise<FlwTransaction | null> {
-  if (!process.env.FLW_SECRET_KEY) return null;
-  const res = await fetch(`${FLW}/transactions/verify_by_reference?tx_ref=${encodeURIComponent(reference)}`, {
-    headers: flwHeaders(), cache: "no-store", signal: AbortSignal.timeout(15000),
-  });
-  const json = await res.json().catch(() => null);
-  if (json?.status !== "success" || !json.data) return null;
-  const d = json.data;
-  return { id: Number(d.id), tx_ref: String(d.tx_ref), status: String(d.status), amount: Number(d.amount), currency: String(d.currency) };
-}
-
-export function isValidWebhook(h: Headers) {
-  const got = Buffer.from(h.get("verif-hash") ?? "");
-  const want = Buffer.from(process.env.FLW_WEBHOOK_HASH ?? "");
-  return want.length > 0 && got.length === want.length && timingSafeEqual(got, want);
-}
+import { PROVIDER_NAME, type Provider, type VerifiedTx } from "./gateways";
 
 export type SettleResult = { status: "paid" | "failed" | "pending" | "mismatch" | "unknown"; orderNumber?: string };
 
 /**
- * Applies a VERIFIED Flutterwave transaction to our records, idempotently, under row locks.
- * The order is marked paid only if reference, status, currency and exact amount all match.
+ * Applies a VERIFIED gateway transaction (from `verifyPayment`) to our records, idempotently, under row locks.
+ * The order is marked paid only if reference, gateway, status, currency and exact amount all match.
  */
-export async function settlePayment(tx: FlwTransaction): Promise<SettleResult> {
+export async function settlePayment(tx: VerifiedTx): Promise<SettleResult> {
   const alerts: (() => Promise<void>)[] = [];
   const result = await db.transaction(async (t): Promise<SettleResult> => {
-    const [pay] = await t.select().from(s.payments).where(eq(s.payments.reference, tx.tx_ref)).for("update");
-    if (!pay) return { status: "unknown" };
+    const [pay] = await t.select().from(s.payments).where(eq(s.payments.reference, tx.reference)).for("update");
+    if (!pay || pay.provider !== tx.provider) return { status: "unknown" }; // a reference only counts on the gateway it was opened with
+    const gw = PROVIDER_NAME[pay.provider as Provider];
     const order = (await lockOrder(t, pay.orderId))!;
     const done = { orderNumber: order.number };
 
@@ -82,13 +31,13 @@ export async function settlePayment(tx: FlwTransaction): Promise<SettleResult> {
       return { status: tx.status === "failed" ? "failed" : "pending", ...done };
     }
 
-    const matches = tx.currency === pay.currency && Math.round(tx.amount * 100) === pay.amount
+    const matches = tx.currency === pay.currency && Number.isInteger(tx.amount) && tx.amount === pay.amount
       && pay.amount === order.total && pay.currency === order.currency;
     if (!matches) {
       await t.update(s.payments).set({ status: "failed", raw: tx }).where(eq(s.payments.id, pay.id));
-      await t.update(s.orders).set({ note: `Payment mismatch on ${tx.tx_ref}: got ${tx.amount} ${tx.currency}` }).where(eq(s.orders.id, order.id));
-      await logOrderEvent(t, order.id, order.status, `Payment mismatch: received ${tx.amount} ${tx.currency}, not marked paid`);
-      alerts.push(() => alertAdmin(`Payment mismatch · ${order.number}`, `Flutterwave reported ${tx.amount} ${tx.currency} for reference ${tx.tx_ref}; expected ${formatMoney(order.total, order.currency as Currency)}. Order NOT marked paid.`));
+      await t.update(s.orders).set({ note: `Payment mismatch on ${tx.reference}: got ${tx.amount / 100} ${tx.currency}` }).where(eq(s.orders.id, order.id));
+      await logOrderEvent(t, order.id, order.status, `Payment mismatch: received ${tx.amount / 100} ${tx.currency} via ${gw}, not marked paid`);
+      alerts.push(() => alertAdmin(`Payment mismatch · ${order.number}`, `${gw} reported ${tx.amount / 100} ${tx.currency} for reference ${tx.reference}; expected ${formatMoney(order.total, order.currency as Currency)}. Order NOT marked paid.`));
       return { status: "mismatch", ...done };
     }
 
@@ -110,15 +59,15 @@ export async function settlePayment(tx: FlwTransaction): Promise<SettleResult> {
       }
       becamePaid = true;
     } else {
-      await t.update(s.orders).set({ note: `Duplicate payment received (${tx.tx_ref}); refund it` }).where(eq(s.orders.id, order.id));
-      await logOrderEvent(t, order.id, order.status, "Duplicate payment received: refund it in Flutterwave");
-      alerts.push(() => alertAdmin(`Duplicate payment · ${order.number}`, `A second successful payment (${tx.tx_ref}) arrived for an order that was already ${order.status}. Refund it in Flutterwave.`));
+      await t.update(s.orders).set({ note: `Duplicate payment received (${tx.reference}); refund it in ${gw}` }).where(eq(s.orders.id, order.id));
+      await logOrderEvent(t, order.id, order.status, `Duplicate payment received: refund it in ${gw}`);
+      alerts.push(() => alertAdmin(`Duplicate payment · ${order.number}`, `A second successful payment (${tx.reference}) arrived for an order that was already ${order.status}. Refund it in ${gw}.`));
       return { status: "paid", ...done };
     }
 
     if (becamePaid) {
       await t.update(s.orders).set({ status: "paid", paidAt: new Date() }).where(eq(s.orders.id, order.id));
-      await logOrderEvent(t, order.id, "paid", order.status === "cancelled" ? "Payment confirmed after the payment window" : "Payment confirmed");
+      await logOrderEvent(t, order.id, "paid", `${order.status === "cancelled" ? "Payment confirmed after the payment window" : "Payment confirmed"} (${gw})`);
       if (order.couponId) {
         const [c] = await t.update(s.coupons).set({ redemptions: sql`${s.coupons.redemptions} + 1` }).where(eq(s.coupons.id, order.couponId))
           .returning({ code: s.coupons.code, redemptions: s.coupons.redemptions, max: s.coupons.maxRedemptions });

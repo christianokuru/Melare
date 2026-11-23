@@ -5,6 +5,7 @@ import { getSettings } from "@/lib/settings";
 import { NewsletterForm } from "./newsletter-form";
 import { CookieSettingsLink } from "@/components/cookie-banner";
 import { ChatIcon, GlobeIcon, ShieldIcon, TruckIcon } from "./icons";
+import { providerNames } from "@/lib/gateways";
 
 const COLUMNS = [
   { title: "Shop", links: [["All products", "/shop"], ["Cleansers", "/shop/cleansers"], ["Serums & oils", "/shop/serums"], ["Moisturisers", "/shop/moisturisers"], ["Sun care", "/shop/sun-care"], ["Bundles", "/bundles"]] },
@@ -53,7 +54,7 @@ export async function Footer() {
         <div className="mx-auto mt-12 flex max-w-[1440px] flex-wrap justify-between gap-3 border-t border-foreground/15 pt-5 text-xs text-muted-foreground">
           <span>© Melaré. All rights reserved.</span>
           <span className="flex flex-wrap gap-x-4 gap-y-1">
-            <span>Payments secured by Flutterwave</span>
+            <span>Payments secured by {providerNames()}</span>
             <CookieSettingsLink className="underline-offset-4 hover:underline" />
           </span>
           <span className="w-full text-center lg:w-auto">Made with love by <a href="https://kylva.com" target="_blank" rel="noopener" className="text-foreground underline underline-offset-4">Kylva</a></span>
