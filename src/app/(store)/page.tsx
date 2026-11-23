@@ -16,7 +16,7 @@ export default function Home() {
       {/* Hero */}
       <section className="grid bg-petal lg:min-h-[calc(100svh-120px)] lg:grid-cols-2">
         <div className="relative order-1 h-[62svh] min-h-[420px] lg:order-2 lg:h-auto">
-          <Image src={media("site/hero.webp")} alt="Woman with radiant, even, melanin-rich skin in warm light" fill priority sizes="(min-width:1024px) 50vw, 100vw" className="object-cover object-[50%_30%]" />
+          <Image src={media("site/hero-rose.webp")} alt="Woman with glowing deep brown skin, a white rose and gold earring against a soft rose backdrop" fill priority sizes="(min-width:1024px) 50vw, 100vw" className="object-cover object-[50%_22%]" />
         </div>
         <div className="order-2 flex flex-col justify-center px-5 py-10 text-center lg:order-1 lg:px-[8vw] lg:text-left">
           <p className="eyebrow mb-4">Skincare for melanin-rich skin</p>
